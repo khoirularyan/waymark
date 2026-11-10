@@ -3,6 +3,7 @@ import 'package:battery_plus/battery_plus.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'gpx_parser.dart';
@@ -46,14 +47,16 @@ class TrackingHome extends StatefulWidget {
 }
 
 class _TrackingHomeState extends State<TrackingHome> {
+  static const String kDefaultServerUrl = 'https://waymark-seven.vercel.app';
+
   static String _resolveApiUrl() {
     const envUrl = String.fromEnvironment('WAYMARK_API_URL');
     if (envUrl.isNotEmpty) return envUrl;
-    // On web or desktop use localhost; on Android emulator use 10.0.2.2
-    return kIsWeb ? 'http://localhost:3000' : 'http://10.0.2.2:3000';
+    return kDefaultServerUrl;
   }
 
-  late final TrackingApi api = TrackingApi(_resolveApiUrl());
+  late String _serverUrl = _resolveApiUrl();
+  late TrackingApi api = TrackingApi(_serverUrl);
 
   StreamSubscription<Position>? _positionSubscription;
   Timer? _pollingTimer;
@@ -85,11 +88,88 @@ class _TrackingHomeState extends State<TrackingHome> {
 
     try {
       final prefs = await SharedPreferences.getInstance();
-      final savedToken = prefs.getString('session_token');
-      if (mounted && savedToken != null) {
-        setState(() => _sessionToken = savedToken);
+      final savedUrl = prefs.getString('server_url');
+      if (savedUrl != null && savedUrl.isNotEmpty) {
+        setState(() {
+          _serverUrl = savedUrl;
+          api = TrackingApi(_serverUrl);
+        });
       }
     } catch (_) {}
+  }
+
+  Future<void> _showServerSettings() async {
+    final controller = TextEditingController(text: _serverUrl);
+    final selected = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Server Endpoint'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Pilih server backend untuk tracking:',
+              style: TextStyle(fontSize: 13, color: Colors.black54),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              decoration: const InputDecoration(
+                labelText: 'API Base URL',
+                hintText: 'https://waymark-seven.vercel.app',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => controller.text = kDefaultServerUrl,
+                    child: const Text('Vercel (Live)'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => controller.text = 'http://localhost:3000',
+                    child: const Text('Localhost'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Batal'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: const Text('Simpan'),
+          ),
+        ],
+      ),
+    );
+
+    if (selected != null && selected.isNotEmpty && selected != _serverUrl) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('server_url', selected);
+      setState(() {
+        _serverUrl = selected;
+        api = TrackingApi(_serverUrl);
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Server dialihkan ke: $_serverUrl'),
+            backgroundColor: const Color(0xFF168654),
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _pickGpxFile() async {
@@ -243,7 +323,7 @@ class _TrackingHomeState extends State<TrackingHome> {
             }
           : null;
 
-      _sessionToken ??= await api.start(
+      _sessionToken = await api.start(
         runnerName: 'Waymark Runner',
         eventName: _selectedRoute?.name ?? 'Outdoor session',
         route: routePayload,
@@ -340,17 +420,50 @@ class _TrackingHomeState extends State<TrackingHome> {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: const Text(
-          'waymark',
-          style: TextStyle(
-            fontWeight: FontWeight.w700,
-            letterSpacing: -1,
-            color: kInkDark,
-          ),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'waymark',
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                letterSpacing: -1,
+                color: kInkDark,
+              ),
+            ),
+            InkWell(
+              onTap: _showServerSettings,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    _serverUrl.contains('vercel') ? Icons.cloud_done : Icons.dns_outlined,
+                    size: 12,
+                    color: _serverUrl.contains('vercel') ? const Color(0xFF16A34A) : Colors.black54,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    _serverUrl.replaceAll('https://', '').replaceAll('http://', ''),
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: _serverUrl.contains('vercel') ? const Color(0xFF16A34A) : Colors.black54,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const Icon(Icons.arrow_drop_down, size: 14, color: Colors.black45),
+                ],
+              ),
+            ),
+          ],
         ),
         actions: [
+          IconButton(
+            onPressed: _showServerSettings,
+            icon: const Icon(Icons.tune, size: 20, color: Colors.black87),
+            tooltip: 'Server Settings',
+          ),
           Padding(
-            padding: const EdgeInsets.only(right: 20),
+            padding: const EdgeInsets.only(right: 16),
             child: Center(
               child: Container(
                 padding: const EdgeInsets.symmetric(
@@ -436,9 +549,77 @@ class _TrackingHomeState extends State<TrackingHome> {
               ),
               if (_isLive && _sessionToken != null) ...[
                 const SizedBox(height: 18),
-                SelectableText(
-                  'Share link: ${api.baseUrl}/live/$_sessionToken',
-                  style: const TextStyle(color: Colors.black54, fontSize: 13),
+                Card(
+                  elevation: 0,
+                  color: const Color(0xFFF0FDF4),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    side: const BorderSide(color: Color(0xFFBBF7D0)),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Row(
+                          children: [
+                            Icon(Icons.share, color: Color(0xFF16A34A), size: 18),
+                            SizedBox(width: 8),
+                            Text(
+                              'Live Tracking Link (Spectators)',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF15803D),
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        SelectableText(
+                          '${api.baseUrl}/live/$_sessionToken',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: kInkDark,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            FilledButton.icon(
+                              style: FilledButton.styleFrom(
+                                backgroundColor: const Color(0xFF16A34A),
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 10,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                              ),
+                              onPressed: () {
+                                Clipboard.setData(
+                                  ClipboardData(
+                                    text: '${api.baseUrl}/live/$_sessionToken',
+                                  ),
+                                );
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Link sesi lari berhasil disalin!'),
+                                    backgroundColor: Color(0xFF16A34A),
+                                  ),
+                                );
+                              },
+                              icon: const Icon(Icons.copy, size: 16),
+                              label: const Text('Salin Link Live'),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ],
             ],
