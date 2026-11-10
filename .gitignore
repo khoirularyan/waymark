@@ -64,3 +64,8 @@ migrate_working_dir/
 
 # Coverage
 coverage/
+
+# APK and build releases
+*.apk
+*.aab
+
