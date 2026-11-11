@@ -68,6 +68,9 @@ class _TrackingHomeState extends State<TrackingHome> {
   String? _sessionToken;
   String? _lastUpdateTime;
   String? _lastCoords;
+  List<ViewerInfo> _viewers = [];
+
+  int get _activeViewerCount => _viewers.where((v) => v.isOnline).length;
 
   // Selected GPX course/route
   GpxRoute? _selectedRoute;
@@ -359,7 +362,7 @@ class _TrackingHomeState extends State<TrackingHome> {
         locationSettings: settings,
       ).listen((Position p) => _handleNewPosition(p));
 
-      // 3. Start a periodic timer to guarantee regular updates (especially on stationary/web)
+      // 3. Start a periodic timer to guarantee regular updates & viewer polling
       _pollingTimer?.cancel();
       _pollingTimer = Timer.periodic(const Duration(seconds: 4), (_) async {
         if (!_isLive || _sessionToken == null) return;
@@ -372,7 +375,23 @@ class _TrackingHomeState extends State<TrackingHome> {
           );
           await _handleNewPosition(pos);
         } catch (_) {}
+
+        // Poll spectators watching our session
+        try {
+          final viewers = await api.getViewers(_sessionToken!);
+          if (mounted) {
+            setState(() {
+              _viewers = viewers;
+            });
+          }
+        } catch (_) {}
       });
+
+      // Initial viewers fetch
+      try {
+        final initialViewers = await api.getViewers(_sessionToken!);
+        if (mounted) setState(() => _viewers = initialViewers);
+      } catch (_) {}
     } catch (e) {
       setState(() => _isLocating = false);
       if (mounted) {
@@ -403,6 +422,7 @@ class _TrackingHomeState extends State<TrackingHome> {
         _isLive = false;
         _sessionToken = null;
         _isLocating = false;
+        _viewers = [];
       });
     }
   }
@@ -621,6 +641,8 @@ class _TrackingHomeState extends State<TrackingHome> {
                     ),
                   ),
                 ),
+                const SizedBox(height: 14),
+                _buildViewersCard(),
               ],
             ],
           ),
@@ -853,36 +875,61 @@ class _TrackingHomeState extends State<TrackingHome> {
   }
 
   Widget _buildMetricsRow() {
-    return Row(
+    return Column(
       children: [
-        _buildMetricItem(
-          'GPS',
-          _lastCoords != null
-              ? 'Fix OK'
-              : (_isLocating
-                    ? 'Locating...'
-                    : (_gpsReady ? 'Ready' : 'Waiting')),
-          subtext: _lastCoords,
+        Row(
+          children: [
+            _buildMetricItem(
+              'GPS',
+              _lastCoords != null
+                  ? 'Fix OK'
+                  : (_isLocating
+                        ? 'Locating...'
+                        : (_gpsReady ? 'Ready' : 'Waiting')),
+              subtext: _lastCoords,
+            ),
+            const SizedBox(width: 10),
+            _buildMetricItem(
+              'Penonton',
+              _isLive ? '$_activeViewerCount Online' : '—',
+              subtext: _viewers.isNotEmpty ? '${_viewers.length} terhubung' : null,
+              isHighlight: _activeViewerCount > 0,
+            ),
+          ],
         ),
-        const SizedBox(width: 10),
-        _buildMetricItem('Internet', 'Connected'),
-        const SizedBox(width: 10),
-        _buildMetricItem(
-          'Battery',
-          _batteryLevel == 0 ? '—' : '$_batteryLevel%',
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            _buildMetricItem('Internet', 'Connected'),
+            const SizedBox(width: 10),
+            _buildMetricItem(
+              'Battery',
+              _batteryLevel == 0 ? '—' : '$_batteryLevel%',
+            ),
+          ],
         ),
       ],
     );
   }
 
-  Widget _buildMetricItem(String label, String value, {String? subtext}) {
+  Widget _buildMetricItem(
+    String label,
+    String value, {
+    String? subtext,
+    bool isHighlight = false,
+  }) {
     return Expanded(
       child: Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: const Color(0xFFEAEAEA)),
+          border: Border.all(
+            color: isHighlight
+                ? const Color(0xFF10B981)
+                : const Color(0xFFEAEAEA),
+            width: isHighlight ? 1.5 : 1,
+          ),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -894,9 +941,9 @@ class _TrackingHomeState extends State<TrackingHome> {
             const SizedBox(height: 6),
             Text(
               value,
-              style: const TextStyle(
+              style: TextStyle(
                 fontWeight: FontWeight.w700,
-                color: kInkDark,
+                color: isHighlight ? const Color(0xFF168654) : kInkDark,
               ),
             ),
             if (subtext != null) ...[
@@ -910,6 +957,184 @@ class _TrackingHomeState extends State<TrackingHome> {
                 ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildViewersCard() {
+    if (!_isLive || _sessionToken == null) return const SizedBox.shrink();
+
+    final activeCount = _activeViewerCount;
+
+    return Card(
+      elevation: 0,
+      color: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: const BorderSide(color: Color(0xFFEAEAEA)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: activeCount > 0
+                            ? const Color(0xFFE8F5E9)
+                            : const Color(0xFFF5F5F5),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(
+                        Icons.visibility_outlined,
+                        color: activeCount > 0
+                            ? const Color(0xFF2E7D32)
+                            : Colors.black54,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    const Text(
+                      'Yang Memantau Anda',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                        color: kInkDark,
+                      ),
+                    ),
+                  ],
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: activeCount > 0
+                        ? const Color(0xFFE8F5E9)
+                        : const Color(0xFFEEEEEE),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (activeCount > 0) ...[
+                        const CircleAvatar(
+                          radius: 3.5,
+                          backgroundColor: Color(0xFF2E7D32),
+                        ),
+                        const SizedBox(width: 5),
+                      ],
+                      Text(
+                        activeCount > 0 ? '$activeCount Online' : 'Belum Ada',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: activeCount > 0
+                              ? const Color(0xFF2E7D32)
+                              : Colors.black54,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            if (_viewers.isEmpty) ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF9F9F9),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.info_outline, size: 18, color: Colors.black45),
+                    SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Belum ada yang membuka link ini. Bagikan link live ke teman/keluarga agar nama mereka muncul di sini saat memantau.',
+                        style: TextStyle(fontSize: 12, color: Colors.black54),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ] else ...[
+              ListView.separated(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: _viewers.length,
+                separatorBuilder: (_, __) =>
+                    const Divider(height: 16, color: Color(0xFFF0F0F0)),
+                itemBuilder: (context, index) {
+                  final viewer = _viewers[index];
+                  final name = viewer.displayName.trim();
+                  final parts = name.split(' ').where((p) => p.isNotEmpty).toList();
+                  final initials = parts.isNotEmpty
+                      ? parts.take(2).map((p) => p[0].toUpperCase()).join()
+                      : '?';
+
+                  return Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 17,
+                        backgroundColor: viewer.isOnline
+                            ? const Color(0xFFE8F5E9)
+                            : const Color(0xFFF5F5F5),
+                        child: Text(
+                          initials,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: viewer.isOnline
+                                ? const Color(0xFF2E7D32)
+                                : Colors.black45,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 11),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              viewer.displayName,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                                color: kInkDark,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              viewer.isOnline
+                                  ? '🟢 Sedang memantau sekarang'
+                                  : '⚪ Terakhir memantau beberapa saat lalu',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: viewer.isOnline
+                                    ? const Color(0xFF168654)
+                                    : Colors.black45,
+                                fontWeight: viewer.isOnline
+                                    ? FontWeight.w500
+                                    : FontWeight.normal,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  );
+                },
               ),
             ],
           ],
