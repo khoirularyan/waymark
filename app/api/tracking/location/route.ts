@@ -15,11 +15,11 @@ const locationItemSchema = z.object({
 });
 
 const singleSchema = locationItemSchema.extend({
-  token: z.string().uuid(),
+  token: z.string().min(1).max(128),
 });
 
 const batchSchema = z.object({
-  token: z.string().uuid(),
+  token: z.string().min(1).max(128),
   locations: z.array(locationItemSchema).min(1).max(500),
 });
 

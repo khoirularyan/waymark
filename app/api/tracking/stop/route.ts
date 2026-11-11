@@ -3,7 +3,7 @@ import { z } from "zod";
 import { stopSession } from "../../../../lib/tracking-store";
 
 const schema = z.object({
-  token: z.string().uuid(),
+  token: z.string().min(1).max(128),
 });
 
 export async function OPTIONS() {

@@ -39,6 +39,7 @@ export type Cheer = {
 export type Session = {
   id?: string;
   shareToken: string;
+  runnerId?: string;
   runnerName: string;
   eventName: string;
   status: "draft" | "live" | "stopped" | "revoked";
@@ -50,11 +51,23 @@ export type Session = {
   activeViewerCount?: number;
   cheers?: Cheer[];
   isSos?: boolean;
+  isStandby?: boolean;
+};
+
+export type Runner = {
+  id: string;
+  runnerName: string;
+  activeToken?: string;
+  activeSessionId?: string | null;
+  lastSeenAt: string;
 };
 
 // Global singleton memory store for Next.js across route module boundaries
 const inMemoryStore: Map<string, Session> =
   (globalThis as any).__waymarkStore ??= new Map<string, Session>();
+
+const inMemoryRunners: Map<string, Runner> =
+  (globalThis as any).__waymarkRunners ??= new Map<string, Runner>();
 
 const inMemoryViewers: Map<string, Map<string, Viewer>> =
   (globalThis as any).__waymarkViewers ??= new Map<string, Map<string, Viewer>>();
@@ -65,7 +78,8 @@ const inMemoryCheers: Map<string, Cheer[]> =
 export async function startSession(
   runnerName: string,
   eventName: string,
-  route?: RouteData
+  route?: RouteData,
+  runnerId?: string
 ): Promise<Session> {
   const shareToken = crypto.randomUUID();
   const startedAt = new Date().toISOString();
@@ -73,8 +87,25 @@ export async function startSession(
 
   let sessionId: string | undefined;
 
+  if (runnerId) {
+    inMemoryRunners.set(runnerId, {
+      id: runnerId,
+      runnerName,
+      activeToken: shareToken,
+      lastSeenAt: startedAt,
+    });
+  }
+
   if (supabase) {
     try {
+      if (runnerId) {
+        await supabase.from("tracking_runners").upsert({
+          id: runnerId,
+          runner_name: runnerName,
+          updated_at: startedAt,
+        });
+      }
+
       const { data: sessionRow, error: sessionError } = await supabase
         .from("tracking_sessions")
         .insert({
@@ -83,12 +114,23 @@ export async function startSession(
           event_name: eventName,
           status: "live",
           started_at: startedAt,
+          runner_id: runnerId ?? null,
         })
         .select("id")
         .single();
 
       if (!sessionError && sessionRow) {
         sessionId = sessionRow.id;
+
+        if (runnerId) {
+          await supabase
+            .from("tracking_runners")
+            .update({
+              active_session_id: sessionId,
+              updated_at: startedAt,
+            })
+            .eq("id", runnerId);
+        }
 
         if (route) {
           await supabase.from("tracking_routes").insert({
@@ -107,6 +149,7 @@ export async function startSession(
   const session: Session = {
     id: sessionId,
     shareToken,
+    runnerId,
     runnerName,
     eventName,
     status: "live",
@@ -116,39 +159,124 @@ export async function startSession(
   };
 
   inMemoryStore.set(shareToken, session);
+  if (runnerId) {
+    inMemoryStore.set(runnerId, session);
+  }
+
   return session;
 }
 
 export async function getSession(token: string): Promise<Session | null> {
-  // Check memory store first for low latency
+  // 1. Check memory store by token or runnerId
   const memorySession = inMemoryStore.get(token);
+  if (memorySession) {
+    const viewers = getActiveViewers(token);
+    memorySession.viewers = viewers;
+    memorySession.activeViewerCount = viewers.filter((v) => v.isOnline).length;
+    memorySession.cheers = getCheers(token);
+    return memorySession;
+  }
+
+  // Check if token is runnerId in memory
+  const memoryRunner = inMemoryRunners.get(token);
+  if (memoryRunner?.activeToken) {
+    const runnerActiveSession = inMemoryStore.get(memoryRunner.activeToken);
+    if (runnerActiveSession) {
+      const viewers = getActiveViewers(memoryRunner.activeToken);
+      runnerActiveSession.viewers = viewers;
+      runnerActiveSession.activeViewerCount = viewers.filter((v) => v.isOnline).length;
+      runnerActiveSession.cheers = getCheers(memoryRunner.activeToken);
+      return runnerActiveSession;
+    }
+  }
+
   const supabase = getSupabaseAdmin();
 
   if (!supabase) {
-    if (memorySession) {
-      const viewers = getActiveViewers(token);
-      memorySession.viewers = viewers;
-      memorySession.activeViewerCount = viewers.filter((v) => v.isOnline).length;
-      memorySession.cheers = getCheers(token);
+    // If not found in memory and no Supabase, check if token looks like runner ID to return standby
+    if (token.startsWith("runner_") || token.startsWith("wm_")) {
+      const standbySession: Session = {
+        shareToken: token,
+        runnerId: token,
+        runnerName: "Waymark Runner",
+        eventName: "Belum Memulai Live",
+        status: "draft",
+        startedAt: new Date().toISOString(),
+        locations: [],
+        viewers: [],
+        activeViewerCount: 0,
+        cheers: getCheers(token),
+        isStandby: true,
+      };
+      return standbySession;
     }
-    return memorySession ?? null;
+    return null;
   }
 
   try {
-    const { data: sessionRow, error: sessionErr } = await supabase
+    // 2. Query Supabase: Try share_token first
+    let sessionRow: any = null;
+    const { data: byToken } = await supabase
       .from("tracking_sessions")
-      .select("id, share_token, runner_name, event_name, status, started_at, finished_at")
+      .select("id, share_token, runner_name, event_name, status, started_at, finished_at, runner_id")
       .eq("share_token", token)
       .maybeSingle();
 
-    if (sessionErr || !sessionRow) {
-      if (memorySession) {
-        const viewers = getActiveViewers(token);
-        memorySession.viewers = viewers;
-        memorySession.activeViewerCount = viewers.filter((v) => v.isOnline).length;
-        memorySession.cheers = getCheers(token);
+    sessionRow = byToken;
+
+    // If not found by share_token, check if token is runner_id
+    let runnerProfile: any = null;
+    if (!sessionRow) {
+      const { data: runnerRow } = await supabase
+        .from("tracking_runners")
+        .select("id, runner_name, active_session_id, updated_at")
+        .eq("id", token)
+        .maybeSingle();
+
+      runnerProfile = runnerRow;
+
+      if (runnerRow?.active_session_id) {
+        const { data: byActiveSession } = await supabase
+          .from("tracking_sessions")
+          .select("id, share_token, runner_name, event_name, status, started_at, finished_at, runner_id")
+          .eq("id", runnerRow.active_session_id)
+          .maybeSingle();
+        sessionRow = byActiveSession;
       }
-      return memorySession ?? null;
+
+      // If still no session, check latest session of this runner
+      if (!sessionRow) {
+        const { data: latestSession } = await supabase
+          .from("tracking_sessions")
+          .select("id, share_token, runner_name, event_name, status, started_at, finished_at, runner_id")
+          .eq("runner_id", token)
+          .order("started_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        sessionRow = latestSession;
+      }
+    }
+
+    if (!sessionRow) {
+      // Runner is known or looks like a runner ID, but has no live session: Return Standby Session
+      if (runnerProfile || token.startsWith("runner_") || token.startsWith("wm_")) {
+        const standbySession: Session = {
+          shareToken: token,
+          runnerId: runnerProfile?.id ?? token,
+          runnerName: runnerProfile?.runner_name ?? "Waymark Runner",
+          eventName: "Belum Memulai Live",
+          status: "draft",
+          startedAt: runnerProfile?.updated_at ?? new Date().toISOString(),
+          locations: [],
+          viewers: [],
+          activeViewerCount: 0,
+          cheers: await fetchCheers(token),
+          isStandby: true,
+        };
+        inMemoryStore.set(token, standbySession);
+        return standbySession;
+      }
+      return null;
     }
 
     // Fetch route if exists
@@ -166,7 +294,7 @@ export async function getSession(token: string): Promise<Session | null> {
       .order("recorded_at", { ascending: true })
       .limit(500);
 
-    const locations: Location[] = (locationRows || []).map((row) => ({
+    const locations: Location[] = (locationRows || []).map((row: any) => ({
       latitude: row.latitude,
       longitude: row.longitude,
       accuracy: row.accuracy ?? 0,
@@ -202,53 +330,42 @@ export async function getSession(token: string): Promise<Session | null> {
       }
     } catch (_) {}
 
-    const viewers = getActiveViewers(token);
+    // Load cheers permanently from Supabase
+    const cheers = await fetchCheers(sessionRow.share_token, sessionRow.id, sessionRow.runner_id);
 
-    const memLocations = memorySession?.locations ?? [];
-    const mergedLocations =
-      memLocations.length >= locations.length
-        ? memLocations
-        : locations.map((loc, idx) => ({
-            ...loc,
-            altitude: memLocations[idx]?.altitude,
-            speed: memLocations[idx]?.speed,
-            heading: memLocations[idx]?.heading,
-            isSos: memLocations[idx]?.isSos,
-          }));
+    const viewers = getActiveViewers(token);
 
     const session: Session = {
       id: sessionRow.id,
       shareToken: sessionRow.share_token,
+      runnerId: sessionRow.runner_id ?? undefined,
       runnerName: sessionRow.runner_name,
       eventName: sessionRow.event_name,
       status: sessionRow.status,
       startedAt: sessionRow.started_at,
       finishedAt: sessionRow.finished_at,
-      locations: mergedLocations.length > 0 ? mergedLocations : locations,
+      locations,
       route: routeRow
         ? {
             routeGeojson: routeRow.route_geojson,
             totalDistance: routeRow.total_distance,
             elevationGain: routeRow.elevation_gain,
           }
-        : memorySession?.route ?? null,
+        : null,
       viewers,
       activeViewerCount: viewers.filter((v) => v.isOnline).length,
-      cheers: getCheers(token),
-      isSos: memorySession?.isSos ?? false,
+      cheers,
+      isSos: false,
     };
 
-    inMemoryStore.set(token, session);
+    inMemoryStore.set(sessionRow.share_token, session);
+    if (sessionRow.runner_id) {
+      inMemoryStore.set(sessionRow.runner_id, session);
+    }
     return session;
   } catch (err) {
     console.warn("Supabase getSession fallback to in-memory:", err);
-    if (memorySession) {
-      const viewers = getActiveViewers(token);
-      memorySession.viewers = viewers;
-      memorySession.activeViewerCount = viewers.filter((v) => v.isOnline).length;
-      memorySession.cheers = getCheers(token);
-    }
-    return memorySession ?? null;
+    return null;
   }
 }
 
@@ -256,45 +373,49 @@ export async function addLocation(
   token: string,
   location: Location
 ): Promise<Session | null> {
-  const session = inMemoryStore.get(token);
+  let session = inMemoryStore.get(token);
   if (!session || session.status !== "live") {
-    // If not in memory, try to retrieve from Supabase
-    const dbSession = await getSession(token);
-    if (!dbSession || dbSession.status !== "live") return null;
+    session = await getSession(token);
+    if (!session || session.status !== "live") return null;
   }
-
-  const activeSession = inMemoryStore.get(token)!;
 
   // Avoid duplicate timestamps
-  if (activeSession.locations.at(-1)?.recordedAt === location.recordedAt) {
-    if (location.isSos !== undefined) activeSession.isSos = location.isSos;
-    return activeSession;
+  if (session.locations.at(-1)?.recordedAt === location.recordedAt) {
+    if (location.isSos !== undefined) session.isSos = location.isSos;
+    return session;
   }
 
-  if (location.isSos !== undefined) activeSession.isSos = location.isSos;
-  activeSession.locations.push(location);
+  if (location.isSos !== undefined) session.isSos = location.isSos;
+  session.locations.push(location);
 
   const supabase = getSupabaseAdmin();
-  if (supabase && activeSession.id) {
+  if (supabase && session.id) {
     try {
       await supabase.from("tracking_locations").insert({
-        session_id: activeSession.id,
+        session_id: session.id,
         latitude: location.latitude,
         longitude: location.longitude,
         accuracy: location.accuracy,
         battery: location.battery,
         recorded_at: location.recordedAt,
       });
+
+      if (session.runnerId) {
+        await supabase
+          .from("tracking_runners")
+          .update({ updated_at: location.recordedAt })
+          .eq("id", session.runnerId);
+      }
     } catch (err) {
       console.warn("Supabase addLocation write failed:", err);
     }
   }
 
   const viewers = getActiveViewers(token);
-  activeSession.viewers = viewers;
-  activeSession.activeViewerCount = viewers.filter((v) => v.isOnline).length;
-  activeSession.cheers = getCheers(token);
-  return activeSession;
+  session.viewers = viewers;
+  session.activeViewerCount = viewers.filter((v) => v.isOnline).length;
+  session.cheers = getCheers(token);
+  return session;
 }
 
 export async function addLocations(
@@ -303,15 +424,14 @@ export async function addLocations(
 ): Promise<Session | null> {
   if (newLocations.length === 0) return getSession(token);
 
-  const session = inMemoryStore.get(token);
+  let session = inMemoryStore.get(token);
   if (!session || session.status !== "live") {
-    const dbSession = await getSession(token);
-    if (!dbSession || dbSession.status !== "live") return null;
+    session = await getSession(token);
+    if (!session || session.status !== "live") return null;
   }
 
-  const activeSession = inMemoryStore.get(token)!;
   const existingTimestamps = new Set(
-    activeSession.locations.map((l) => l.recordedAt)
+    session.locations.map((l) => l.recordedAt)
   );
 
   const toAdd: Location[] = [];
@@ -320,20 +440,20 @@ export async function addLocations(
       existingTimestamps.add(loc.recordedAt);
       toAdd.push(loc);
       if (loc.isSos !== undefined) {
-        activeSession.isSos = loc.isSos;
+        session.isSos = loc.isSos;
       }
     }
   }
 
   if (toAdd.length > 0) {
-    activeSession.locations.push(...toAdd);
+    session.locations.push(...toAdd);
 
     const supabase = getSupabaseAdmin();
-    if (supabase && activeSession.id) {
+    if (supabase && session.id) {
       try {
         await supabase.from("tracking_locations").insert(
           toAdd.map((loc) => ({
-            session_id: activeSession.id,
+            session_id: session.id,
             latitude: loc.latitude,
             longitude: loc.longitude,
             accuracy: loc.accuracy,
@@ -341,6 +461,13 @@ export async function addLocations(
             recorded_at: loc.recordedAt,
           }))
         );
+
+        if (session.runnerId) {
+          await supabase
+            .from("tracking_runners")
+            .update({ updated_at: toAdd[toAdd.length - 1].recordedAt })
+            .eq("id", session.runnerId);
+        }
       } catch (err) {
         console.warn("Supabase addLocations batch write failed:", err);
       }
@@ -348,10 +475,10 @@ export async function addLocations(
   }
 
   const viewers = getActiveViewers(token);
-  activeSession.viewers = viewers;
-  activeSession.activeViewerCount = viewers.filter((v) => v.isOnline).length;
-  activeSession.cheers = getCheers(token);
-  return activeSession;
+  session.viewers = viewers;
+  session.activeViewerCount = viewers.filter((v) => v.isOnline).length;
+  session.cheers = getCheers(token);
+  return session;
 }
 
 export async function saveRoute(
@@ -362,7 +489,10 @@ export async function saveRoute(
   if (!session) return false;
 
   session.route = route;
-  inMemoryStore.set(token, session);
+  inMemoryStore.set(session.shareToken, session);
+  if (session.runnerId) {
+    inMemoryStore.set(session.runnerId, session);
+  }
 
   const supabase = getSupabaseAdmin();
   if (supabase && session.id) {
@@ -383,24 +513,54 @@ export async function saveRoute(
 }
 
 export async function stopSession(token: string): Promise<Session | null> {
-  const session = inMemoryStore.get(token);
+  const session = await getSession(token);
+  const now = new Date().toISOString();
+
   if (session) {
     session.status = "stopped";
-    session.finishedAt = new Date().toISOString();
+    session.finishedAt = now;
   }
 
   const supabase = getSupabaseAdmin();
   if (supabase) {
     try {
-      await supabase
-        .from("tracking_sessions")
-        .update({
-          status: "stopped",
-          finished_at: new Date().toISOString(),
-        })
-        .eq("share_token", token);
+      if (session?.id) {
+        await supabase
+          .from("tracking_sessions")
+          .update({
+            status: "stopped",
+            finished_at: now,
+          })
+          .eq("id", session.id);
+      } else {
+        await supabase
+          .from("tracking_sessions")
+          .update({
+            status: "stopped",
+            finished_at: now,
+          })
+          .eq("share_token", token);
+      }
+
+      if (session?.runnerId) {
+        await supabase
+          .from("tracking_runners")
+          .update({
+            active_session_id: null,
+            updated_at: now,
+          })
+          .eq("id", session.runnerId);
+      }
     } catch (err) {
       console.warn("Supabase stopSession failed:", err);
+    }
+  }
+
+  if (session?.runnerId) {
+    const memRunner = inMemoryRunners.get(session.runnerId);
+    if (memRunner) {
+      memRunner.activeToken = undefined;
+      memRunner.lastSeenAt = now;
     }
   }
 
@@ -424,7 +584,6 @@ export function getActiveViewers(token: string): Viewer[] {
     });
   }
 
-  // Sort: online first, then latest lastSeenAt
   list.sort((a, b) => {
     if (a.isOnline === b.isOnline) {
       return new Date(b.lastSeenAt).getTime() - new Date(a.lastSeenAt).getTime();
@@ -478,9 +637,7 @@ export async function registerViewer(
         },
         { onConflict: "session_id, visitor_id" }
       );
-    } catch (err) {
-      // In-memory fallback
-    }
+    } catch (_) {}
   }
 
   const viewers = getActiveViewers(token);
@@ -489,6 +646,52 @@ export async function registerViewer(
 }
 
 export function getCheers(token: string): Cheer[] {
+  return inMemoryCheers.get(token) ?? [];
+}
+
+export async function fetchCheers(
+  token: string,
+  sessionId?: string,
+  runnerId?: string
+): Promise<Cheer[]> {
+  const memCheers = inMemoryCheers.get(token);
+  if (memCheers && memCheers.length > 0) {
+    return memCheers;
+  }
+
+  const supabase = getSupabaseAdmin();
+  if (supabase) {
+    try {
+      let query = supabase.from("tracking_cheers").select("*");
+      if (sessionId && runnerId) {
+        query = query.or(`session_id.eq.${sessionId},runner_id.eq.${runnerId}`);
+      } else if (sessionId) {
+        query = query.eq("session_id", sessionId);
+      } else if (runnerId) {
+        query = query.eq("runner_id", runnerId);
+      } else {
+        query = query.eq("runner_id", token);
+      }
+
+      const { data: rows } = await query
+        .order("created_at", { ascending: false })
+        .limit(50);
+
+      if (rows && rows.length > 0) {
+        const mapped: Cheer[] = rows.map((r: any) => ({
+          id: r.id,
+          senderName: r.sender_name,
+          message: r.message,
+          emoji: r.emoji,
+          audioData: r.audio_data,
+          durationSeconds: r.duration_seconds,
+          createdAt: r.created_at,
+        }));
+        inMemoryCheers.set(token, mapped);
+        return mapped;
+      }
+    } catch (_) {}
+  }
   return inMemoryCheers.get(token) ?? [];
 }
 
@@ -502,13 +705,17 @@ export async function addCheer(
     durationSeconds?: number;
   }
 ): Promise<Cheer | null> {
-  const session = inMemoryStore.get(token);
-  if (!session) return null;
+  const session = await getSession(token);
+  const targetKey = session?.shareToken || token;
+  const runnerId = session?.runnerId || (token.startsWith("runner_") || token.startsWith("wm_") ? token : undefined);
 
-  let cheerList = inMemoryCheers.get(token);
+  let cheerList = inMemoryCheers.get(targetKey);
   if (!cheerList) {
     cheerList = [];
-    inMemoryCheers.set(token, cheerList);
+    inMemoryCheers.set(targetKey, cheerList);
+  }
+  if (runnerId && runnerId !== targetKey) {
+    inMemoryCheers.set(runnerId, cheerList);
   }
 
   const cheer: Cheer = {
@@ -526,7 +733,30 @@ export async function addCheer(
     cheerList.pop();
   }
 
-  session.cheers = cheerList;
+  if (session) {
+    session.cheers = cheerList;
+  }
+
+  // Persist to Supabase tracking_cheers
+  const supabase = getSupabaseAdmin();
+  if (supabase) {
+    try {
+      await supabase.from("tracking_cheers").insert({
+        id: cheer.id,
+        session_id: session?.id ?? null,
+        runner_id: runnerId ?? null,
+        sender_name: cheer.senderName,
+        emoji: cheer.emoji,
+        message: cheer.message ?? null,
+        audio_data: cheer.audioData ?? null,
+        duration_seconds: cheer.durationSeconds ?? null,
+        created_at: cheer.createdAt,
+      });
+    } catch (err) {
+      console.warn("Supabase addCheer write failed:", err);
+    }
+  }
+
   return cheer;
 }
 
@@ -537,7 +767,7 @@ export async function updateSessionTitle(
   const cleanTitle = newTitle.trim();
   if (!cleanTitle) return false;
 
-  const session = inMemoryStore.get(token);
+  const session = await getSession(token);
   if (session) {
     session.eventName = cleanTitle;
   }
@@ -545,10 +775,17 @@ export async function updateSessionTitle(
   const supabase = getSupabaseAdmin();
   if (supabase) {
     try {
-      await supabase
-        .from("tracking_sessions")
-        .update({ event_name: cleanTitle })
-        .eq("share_token", token);
+      if (session?.id) {
+        await supabase
+          .from("tracking_sessions")
+          .update({ event_name: cleanTitle })
+          .eq("id", session.id);
+      } else {
+        await supabase
+          .from("tracking_sessions")
+          .update({ event_name: cleanTitle })
+          .eq("share_token", token);
+      }
     } catch (_) {}
   }
   return true;
@@ -558,7 +795,7 @@ export async function setSos(
   token: string,
   isSos: boolean
 ): Promise<boolean> {
-  const session = inMemoryStore.get(token);
+  const session = await getSession(token);
   if (!session) return false;
   session.isSos = isSos;
   return true;

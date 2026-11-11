@@ -5,6 +5,7 @@ import { startSession } from "../../../../lib/tracking-store";
 const schema = z.object({
   runnerName: z.string().trim().min(1).max(80),
   eventName: z.string().trim().min(1).max(160),
+  runnerId: z.string().trim().min(3).max(100).optional(),
   route: z
     .object({
       routeGeojson: z.any(),
@@ -41,13 +42,15 @@ export async function POST(request: Request) {
     const session = await startSession(
       parsed.data.runnerName,
       parsed.data.eventName,
-      routeData
+      routeData,
+      parsed.data.runnerId
     );
 
     return NextResponse.json(
       {
         shareToken: session.shareToken,
-        publicUrl: `/live/${session.shareToken}`,
+        runnerId: session.runnerId,
+        publicUrl: session.runnerId ? `/live/${session.runnerId}` : `/live/${session.shareToken}`,
       },
       { status: 201 }
     );

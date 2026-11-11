@@ -23,6 +23,7 @@ export async function GET(_: Request, { params }: RouteProps) {
   const payload = {
     id: session.id,
     shareToken: session.shareToken,
+    runnerId: session.runnerId,
     runnerName: session.runnerName,
     eventName: session.eventName,
     status: session.status,
@@ -35,6 +36,7 @@ export async function GET(_: Request, { params }: RouteProps) {
     activeViewerCount: session.activeViewerCount ?? 0,
     cheers: session.cheers ?? [],
     isSos: session.isSos ?? false,
+    isStandby: session.isStandby ?? false,
   };
 
   return NextResponse.json({

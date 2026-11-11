@@ -279,7 +279,8 @@ export function LiveTrackerView({ token, initialSession }: LiveTrackerViewProps)
   const isOffCourse = offCourseMeters > 300;
   const isFarOffCourse = offCourseMeters > 1000;
 
-  const isLive = session ? session.status === "live" : true;
+  const isStandby = Boolean(session?.isStandby || (session?.status === "draft" && validLocations.length === 0));
+  const isLive = session ? session.status === "live" : false;
   const runnerName = session?.runnerName ?? "Waymark Runner";
   const eventName = session?.eventName ?? "Live Trail Run";
 
@@ -367,6 +368,8 @@ export function LiveTrackerView({ token, initialSession }: LiveTrackerViewProps)
               className={`inline-flex items-center gap-1.5 rounded-full px-2 sm:px-2.5 py-0.5 text-[10px] sm:text-[11px] font-bold ${
                 isEmergencySos
                   ? "bg-rose-600 text-white animate-pulse"
+                  : isStandby
+                  ? "bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800"
                   : isLive
                   ? "bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800"
                   : "bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400"
@@ -374,10 +377,16 @@ export function LiveTrackerView({ token, initialSession }: LiveTrackerViewProps)
             >
               <span
                 className={`size-2 rounded-full ${
-                  isEmergencySos ? "bg-white" : isLive ? "bg-emerald-500 animate-ping" : "bg-neutral-400"
+                  isEmergencySos
+                    ? "bg-white"
+                    : isStandby
+                    ? "bg-amber-500 animate-ping"
+                    : isLive
+                    ? "bg-emerald-500 animate-ping"
+                    : "bg-neutral-400"
                 }`}
               />
-              {isEmergencySos ? "SOS AKTIF" : isLive ? "LIVE" : "SELESAI"}
+              {isEmergencySos ? "SOS AKTIF" : isStandby ? "STANDBY" : isLive ? "LIVE" : "SELESAI"}
             </span>
 
             <div className="hidden md:flex flex-col">
@@ -512,6 +521,22 @@ export function LiveTrackerView({ token, initialSession }: LiveTrackerViewProps)
             isStopped={!isLive}
             className="relative h-full w-full overflow-hidden"
           />
+
+          {/* Standby / Waiting for Runner Notice */}
+          {isStandby && (
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 max-w-sm sm:max-w-md w-[92%] rounded-2xl bg-white/95 dark:bg-neutral-900/95 p-4 shadow-xl backdrop-blur-md border border-neutral-200 dark:border-neutral-800 text-center animate-in fade-in slide-in-from-top-4 duration-300">
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300 text-[11px] font-bold mb-2">
+                <span className="size-2 rounded-full bg-amber-500 animate-ping" />
+                MENUNGGU SESI LARI
+              </div>
+              <h3 className="text-sm sm:text-base font-bold text-neutral-900 dark:text-neutral-100">
+                {runnerName} Sedang Standby
+              </h3>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1 leading-relaxed">
+                Halaman ini otomatis melacak posisi begitu {runnerName} mulai berlari. Anda juga bisa menulis pesan semangat atau merekam suara di tab Sorakan!
+              </p>
+            </div>
+          )}
 
           {/* Mobile Bottom Navigation Dock (Thumb-friendly, sleek glassmorphism, zero scroll) */}
           <nav className="lg:hidden absolute bottom-3 inset-x-3 max-w-sm mx-auto z-20 flex items-center justify-around rounded-2xl bg-white/95 dark:bg-slate-900/95 p-1.5 shadow-2xl backdrop-blur-md border border-neutral-200/90 dark:border-slate-800 text-xs font-semibold">
