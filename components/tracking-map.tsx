@@ -18,6 +18,7 @@ interface TrackingMapProps {
   trackCoordinates?: [number, number][];
   currentPosition?: [number, number] | null;
   isStopped?: boolean;
+  className?: string;
 }
 
 export function TrackingMap({
@@ -25,6 +26,7 @@ export function TrackingMap({
   trackCoordinates = [],
   currentPosition,
   isStopped = false,
+  className,
 }: TrackingMapProps) {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<MapLibreMap | null>(null);
@@ -335,7 +337,10 @@ export function TrackingMap({
 
   return (
     <section
-      className="relative min-h-[460px] overflow-hidden rounded-2xl border border-[#dce3df] bg-[#e6ebe7] sm:min-h-[580px]"
+      className={
+        className ??
+        "relative min-h-[460px] overflow-hidden rounded-2xl border border-[#dce3df] bg-[#e6ebe7] sm:min-h-[580px]"
+      }
       aria-label="Live route map"
     >
       <div ref={container} className="absolute inset-0" />
