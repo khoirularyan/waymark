@@ -85,6 +85,10 @@ class WaymarkAppState extends State<WaymarkApp> {
           primary: kBrandOrange,
           brightness: Brightness.dark,
         ),
+        navigationBarTheme: NavigationBarThemeData(
+          backgroundColor: const Color(0xFF1E293B),
+          indicatorColor: kBrandOrange.withValues(alpha: 0.25),
+        ),
       ),
       themeMode: _themeMode,
       home: const TrackingHome(),
@@ -864,27 +868,34 @@ class _TrackingHomeState extends State<TrackingHome> {
 
   Widget _buildShareLinkCard() {
     if (!_isLive || _sessionToken == null) return const SizedBox.shrink();
+    final isDark = WaymarkApp.of(context).isDark;
     return Card(
       elevation: 0,
-      color: const Color(0xFFF0FDF4),
+      color: isDark
+          ? const Color(0xFF064E3B).withValues(alpha: 0.4)
+          : const Color(0xFFF0FDF4),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: const BorderSide(color: Color(0xFFBBF7D0)),
+        side: BorderSide(
+          color: isDark ? const Color(0xFF047857) : const Color(0xFFBBF7D0),
+        ),
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Row(
+            Row(
               children: [
-                Icon(Icons.share, color: Color(0xFF16A34A), size: 18),
-                SizedBox(width: 8),
+                const Icon(Icons.share, color: Color(0xFF10B981), size: 18),
+                const SizedBox(width: 8),
                 Text(
                   'Link Live Tracking untuk Pemantau',
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
-                    color: Color(0xFF15803D),
+                    color: isDark
+                        ? const Color(0xFF34D399)
+                        : const Color(0xFF15803D),
                     fontSize: 14,
                   ),
                 ),
@@ -893,9 +904,9 @@ class _TrackingHomeState extends State<TrackingHome> {
             const SizedBox(height: 8),
             SelectableText(
               '${api.baseUrl}/live/$_sessionToken',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 13,
-                color: kInkDark,
+                color: isDark ? Colors.white : kInkDark,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -1113,13 +1124,15 @@ class _TrackingHomeState extends State<TrackingHome> {
               children: [
                 Row(
                   children: [
-                    const Text(
+                    Text(
                       'waymark',
                       style: TextStyle(
                         fontWeight: FontWeight.w800,
                         letterSpacing: -1,
                         fontSize: 22,
-                        color: kInkDark,
+                        color: WaymarkApp.of(context).isDark
+                            ? Colors.white
+                            : kInkDark,
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -1130,8 +1143,12 @@ class _TrackingHomeState extends State<TrackingHome> {
                       ),
                       decoration: BoxDecoration(
                         color: _isLive
-                            ? const Color(0xFFE8F5E9)
-                            : const Color(0xFFEEEEEE),
+                            ? (WaymarkApp.of(context).isDark
+                                ? const Color(0xFF064E3B)
+                                : const Color(0xFFE8F5E9))
+                            : (WaymarkApp.of(context).isDark
+                                ? const Color(0xFF1E293B)
+                                : const Color(0xFFEEEEEE)),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Row(
@@ -1142,8 +1159,10 @@ class _TrackingHomeState extends State<TrackingHome> {
                             height: 6,
                             decoration: BoxDecoration(
                               color: _isLive
-                                  ? const Color(0xFF2E7D32)
-                                  : const Color(0xFF757575),
+                                  ? const Color(0xFF10B981)
+                                  : (WaymarkApp.of(context).isDark
+                                      ? Colors.white38
+                                      : const Color(0xFF757575)),
                               shape: BoxShape.circle,
                             ),
                           ),
@@ -1152,8 +1171,12 @@ class _TrackingHomeState extends State<TrackingHome> {
                             _isLive ? 'LIVE' : 'STANDBY',
                             style: TextStyle(
                               color: _isLive
-                                  ? const Color(0xFF2E7D32)
-                                  : const Color(0xFF616161),
+                                  ? (WaymarkApp.of(context).isDark
+                                      ? const Color(0xFF34D399)
+                                      : const Color(0xFF2E7D32))
+                                  : (WaymarkApp.of(context).isDark
+                                      ? Colors.white60
+                                      : const Color(0xFF616161)),
                               fontWeight: FontWeight.bold,
                               fontSize: 11,
                             ),
@@ -1179,13 +1202,21 @@ class _TrackingHomeState extends State<TrackingHome> {
                         ),
                         decoration: BoxDecoration(
                           color: _trackingIntervalSeconds > 10
-                              ? const Color(0xFFECFDF5)
-                              : const Color(0xFFEFF6FF),
+                              ? (WaymarkApp.of(context).isDark
+                                  ? const Color(0xFF064E3B)
+                                  : const Color(0xFFECFDF5))
+                              : (WaymarkApp.of(context).isDark
+                                  ? const Color(0xFF1E3A8A)
+                                  : const Color(0xFFEFF6FF)),
                           borderRadius: BorderRadius.circular(14),
                           border: Border.all(
                             color: _trackingIntervalSeconds > 10
-                                ? const Color(0xFFA7F3D0)
-                                : const Color(0xFFBFDBFE),
+                                ? (WaymarkApp.of(context).isDark
+                                    ? const Color(0xFF047857)
+                                    : const Color(0xFFA7F3D0))
+                                : (WaymarkApp.of(context).isDark
+                                    ? const Color(0xFF1D4ED8)
+                                    : const Color(0xFFBFDBFE)),
                           ),
                         ),
                         child: Row(
@@ -1197,8 +1228,8 @@ class _TrackingHomeState extends State<TrackingHome> {
                                   : Icons.flash_on,
                               size: 12,
                               color: _trackingIntervalSeconds > 10
-                                  ? const Color(0xFF059669)
-                                  : const Color(0xFF2563EB),
+                                  ? const Color(0xFF10B981)
+                                  : const Color(0xFF3B82F6),
                             ),
                             const SizedBox(width: 3),
                             Text(
@@ -1209,8 +1240,12 @@ class _TrackingHomeState extends State<TrackingHome> {
                                 fontSize: 10,
                                 fontWeight: FontWeight.bold,
                                 color: _trackingIntervalSeconds > 10
-                                    ? const Color(0xFF059669)
-                                    : const Color(0xFF2563EB),
+                                    ? (WaymarkApp.of(context).isDark
+                                        ? const Color(0xFF34D399)
+                                        : const Color(0xFF059669))
+                                    : (WaymarkApp.of(context).isDark
+                                        ? const Color(0xFF60A5FA)
+                                        : const Color(0xFF2563EB)),
                               ),
                             ),
                           ],
@@ -1227,8 +1262,12 @@ class _TrackingHomeState extends State<TrackingHome> {
                       ),
                       decoration: BoxDecoration(
                         color: _batteryLevel <= 20
-                            ? const Color(0xFFFEE2E2)
-                            : const Color(0xFFF1F5F9),
+                            ? (WaymarkApp.of(context).isDark
+                                ? const Color(0xFF7F1D1D)
+                                : const Color(0xFFFEE2E2))
+                            : (WaymarkApp.of(context).isDark
+                                ? const Color(0xFF1E293B)
+                                : const Color(0xFFF1F5F9)),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Row(
@@ -1241,7 +1280,9 @@ class _TrackingHomeState extends State<TrackingHome> {
                             size: 13,
                             color: _batteryLevel <= 20
                                 ? Colors.red
-                                : Colors.black54,
+                                : (WaymarkApp.of(context).isDark
+                                    ? Colors.white70
+                                    : Colors.black54),
                           ),
                           const SizedBox(width: 3),
                           Text(
@@ -1251,7 +1292,9 @@ class _TrackingHomeState extends State<TrackingHome> {
                               fontWeight: FontWeight.bold,
                               color: _batteryLevel <= 20
                                   ? Colors.red
-                                  : Colors.black87,
+                                  : (WaymarkApp.of(context).isDark
+                                      ? Colors.white
+                                      : Colors.black87),
                             ),
                           ),
                         ],
@@ -1322,9 +1365,15 @@ class _TrackingHomeState extends State<TrackingHome> {
                   vertical: 8,
                 ),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFFFFBEB),
+                  color: WaymarkApp.of(context).isDark
+                      ? const Color(0xFF451A03)
+                      : const Color(0xFFFFFBEB),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFFDE68A)),
+                  border: Border.all(
+                    color: WaymarkApp.of(context).isDark
+                        ? const Color(0xFF78350F)
+                        : const Color(0xFFFDE68A),
+                  ),
                 ),
                 child: Row(
                   children: [
@@ -1339,8 +1388,10 @@ class _TrackingHomeState extends State<TrackingHome> {
                         _routeProgress!.distanceFromRouteMeters > 1000
                             ? 'Belum di jalur rute (~${(_routeProgress!.distanceFromRouteMeters / 1000).toStringAsFixed(1)} km ke rute)'
                             : 'Melenceng ~${_routeProgress!.distanceFromRouteMeters.round()}m dari rute GPX',
-                        style: const TextStyle(
-                          color: Color(0xFF92400E),
+                        style: TextStyle(
+                          color: WaymarkApp.of(context).isDark
+                              ? const Color(0xFFFCD34D)
+                              : const Color(0xFF92400E),
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
                         ),
@@ -1432,14 +1483,22 @@ class _TrackingHomeState extends State<TrackingHome> {
                       vertical: 10,
                     ),
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: WaymarkApp.of(context).isDark
+                          ? const Color(0xFF1E293B)
+                          : Colors.white,
                       borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: const Color(0xFFE5E7EB)),
-                      boxShadow: const [
+                      border: Border.all(
+                        color: WaymarkApp.of(context).isDark
+                            ? const Color(0xFF334155)
+                            : const Color(0xFFE5E7EB),
+                      ),
+                      boxShadow: [
                         BoxShadow(
-                          color: Color(0x06000000),
+                          color: WaymarkApp.of(context).isDark
+                              ? Colors.black26
+                              : const Color(0x06000000),
                           blurRadius: 8,
-                          offset: Offset(0, 2),
+                          offset: const Offset(0, 2),
                         ),
                       ],
                     ),
@@ -1451,7 +1510,9 @@ class _TrackingHomeState extends State<TrackingHome> {
                               : Icons.alt_route,
                           color: _selectedRoute != null
                               ? kBrandOrange
-                              : Colors.black38,
+                              : (WaymarkApp.of(context).isDark
+                                  ? Colors.white38
+                                  : Colors.black38),
                           size: 20,
                         ),
                         const SizedBox(width: 10),
@@ -1463,10 +1524,12 @@ class _TrackingHomeState extends State<TrackingHome> {
                               Text(
                                 _selectedRoute?.name ??
                                     'Belum ada rute GPX dimuat',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 12,
-                                  color: kInkDark,
+                                  color: WaymarkApp.of(context).isDark
+                                      ? Colors.white
+                                      : kInkDark,
                                 ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
@@ -1484,8 +1547,12 @@ class _TrackingHomeState extends State<TrackingHome> {
                                 style: TextStyle(
                                   fontSize: 10,
                                   color: _routeProgress?.isOffCourse == true
-                                      ? const Color(0xFFB45309)
-                                      : Colors.black54,
+                                      ? (WaymarkApp.of(context).isDark
+                                          ? const Color(0xFFFCD34D)
+                                          : const Color(0xFFB45309))
+                                      : (WaymarkApp.of(context).isDark
+                                          ? Colors.white60
+                                          : Colors.black54),
                                 ),
                               ),
                             ],
@@ -1498,7 +1565,9 @@ class _TrackingHomeState extends State<TrackingHome> {
                               vertical: 3,
                             ),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFF0FDF4),
+                              color: WaymarkApp.of(context).isDark
+                                  ? const Color(0xFF064E3B)
+                                  : const Color(0xFFF0FDF4),
                               borderRadius: BorderRadius.circular(10),
                             ),
                             child: Row(
@@ -1575,7 +1644,9 @@ class _TrackingHomeState extends State<TrackingHome> {
                       height: 52,
                       child: FilledButton.icon(
                         style: FilledButton.styleFrom(
-                          backgroundColor: const Color(0xFF171717),
+                          backgroundColor: WaymarkApp.of(context).isDark
+                              ? const Color(0xFF334155)
+                              : const Color(0xFF171717),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(16),
                           ),
@@ -1630,16 +1701,20 @@ class _TrackingHomeState extends State<TrackingHome> {
                     width: 52,
                     child: IconButton.filledTonal(
                       style: IconButton.styleFrom(
-                        backgroundColor: const Color(0xFFF1F5F9),
+                        backgroundColor: WaymarkApp.of(context).isDark
+                            ? const Color(0xFF1E293B)
+                            : const Color(0xFFF1F5F9),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(16),
                         ),
                       ),
                       onPressed: _shareTrackingLink,
-                      icon: const Icon(
+                      icon: Icon(
                         Icons.share,
                         size: 20,
-                        color: Color(0xFF0F172A),
+                        color: WaymarkApp.of(context).isDark
+                            ? Colors.white
+                            : const Color(0xFF0F172A),
                       ),
                       tooltip: 'Bagikan Link',
                     ),
@@ -1660,20 +1735,23 @@ class _TrackingHomeState extends State<TrackingHome> {
     String? subtext,
     bool isHero = false,
   }) {
+    final isDark = WaymarkApp.of(context).isDark;
     return Container(
       padding: EdgeInsets.symmetric(
         horizontal: isHero ? 16 : 14,
         vertical: isHero ? 12 : 10,
       ),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: isDark ? const Color(0xFF1E293B) : Colors.white,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
-        boxShadow: const [
+        border: Border.all(
+          color: isDark ? const Color(0xFF334155) : const Color(0xFFE5E7EB),
+        ),
+        boxShadow: [
           BoxShadow(
-            color: Color(0x06000000),
+            color: isDark ? Colors.black26 : const Color(0x06000000),
             blurRadius: 10,
-            offset: Offset(0, 2),
+            offset: const Offset(0, 2),
           ),
         ],
       ),
@@ -1691,7 +1769,9 @@ class _TrackingHomeState extends State<TrackingHome> {
                   fontSize: isHero ? 11 : 10,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 0.8,
-                  color: const Color(0xFF64748B),
+                  color: isDark
+                      ? const Color(0xFF94A3B8)
+                      : const Color(0xFF64748B),
                 ),
               ),
             ],
@@ -1707,7 +1787,7 @@ class _TrackingHomeState extends State<TrackingHome> {
                   fontSize: isHero ? 32 : 24,
                   fontWeight: FontWeight.w900,
                   letterSpacing: -1,
-                  color: kInkDark,
+                  color: isDark ? Colors.white : kInkDark,
                   height: 1.1,
                 ),
               ),
@@ -1715,10 +1795,12 @@ class _TrackingHomeState extends State<TrackingHome> {
                 const SizedBox(width: 4),
                 Text(
                   unit,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
-                    color: Color(0xFF64748B),
+                    color: isDark
+                        ? const Color(0xFF94A3B8)
+                        : const Color(0xFF64748B),
                   ),
                 ),
               ],
@@ -1728,9 +1810,11 @@ class _TrackingHomeState extends State<TrackingHome> {
             const SizedBox(height: 2),
             Text(
               subtext,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 10,
-                color: Color(0xFF94A3B8),
+                color: isDark
+                    ? const Color(0xFF64748B)
+                    : const Color(0xFF94A3B8),
                 fontWeight: FontWeight.w500,
               ),
               maxLines: 1,
@@ -1799,13 +1883,16 @@ class _TrackingHomeState extends State<TrackingHome> {
   }
 
   Widget _buildGpxRouteCard() {
+    final isDark = WaymarkApp.of(context).isDark;
     if (_selectedRoute != null) {
       return Card(
         elevation: 0,
-        color: Colors.white,
+        color: isDark ? const Color(0xFF1E293B) : Colors.white,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
-          side: const BorderSide(color: Color(0xFFD6E7DC)),
+          side: BorderSide(
+            color: isDark ? const Color(0xFF334155) : const Color(0xFFD6E7DC),
+          ),
         ),
         child: Padding(
           padding: const EdgeInsets.all(18),
@@ -1817,7 +1904,9 @@ class _TrackingHomeState extends State<TrackingHome> {
                   Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFFFF7ED),
+                      color: isDark
+                          ? const Color(0xFF7C2D12)
+                          : const Color(0xFFFFF7ED),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: const Icon(
@@ -1833,10 +1922,10 @@ class _TrackingHomeState extends State<TrackingHome> {
                       children: [
                         Text(
                           _selectedRoute!.name,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontWeight: FontWeight.w700,
                             fontSize: 16,
-                            color: kInkDark,
+                            color: isDark ? Colors.white : kInkDark,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -1855,31 +1944,39 @@ class _TrackingHomeState extends State<TrackingHome> {
                   ),
                   if (!_isLive)
                     IconButton(
-                      icon: const Icon(
+                      icon: Icon(
                         Icons.close_rounded,
                         size: 20,
-                        color: Colors.black45,
+                        color: isDark ? Colors.white60 : Colors.black45,
                       ),
                       tooltip: 'Remove route',
                       onPressed: _clearRoute,
                     ),
                 ],
               ),
-              const Divider(height: 24, color: Color(0xFFF0F0F0)),
+              Divider(
+                height: 24,
+                color: isDark
+                    ? const Color(0xFF334155)
+                    : const Color(0xFFF0F0F0),
+              ),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
                   _routeDetail(
                     'Distance',
                     '${_selectedRoute!.totalDistanceKm} km',
+                    isDark,
                   ),
                   _routeDetail(
                     'Elevation Gain',
                     '+${_selectedRoute!.elevationGainMeters} m',
+                    isDark,
                   ),
                   _routeDetail(
                     'Waypoints',
                     '${_selectedRoute!.points.length} pts',
+                    isDark,
                   ),
                 ],
               ),
@@ -1892,31 +1989,36 @@ class _TrackingHomeState extends State<TrackingHome> {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: isDark ? const Color(0xFF1E293B) : Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFEAEAEA)),
+        border: Border.all(
+          color: isDark ? const Color(0xFF334155) : const Color(0xFFEAEAEA),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
+          Row(
             children: [
-              Icon(Icons.map_outlined, color: kBrandOrange, size: 20),
-              SizedBox(width: 8),
+              const Icon(Icons.map_outlined, color: kBrandOrange, size: 20),
+              const SizedBox(width: 8),
               Text(
                 'Trail Route (GPX)',
                 style: TextStyle(
                   fontWeight: FontWeight.w700,
                   fontSize: 15,
-                  color: kInkDark,
+                  color: isDark ? Colors.white : kInkDark,
                 ),
               ),
             ],
           ),
           const SizedBox(height: 6),
-          const Text(
+          Text(
             'Load a GPX route to share the course path (orange line) with spectators.',
-            style: TextStyle(fontSize: 13, color: Colors.black54),
+            style: TextStyle(
+              fontSize: 13,
+              color: isDark ? Colors.white70 : Colors.black54,
+            ),
           ),
           const SizedBox(height: 14),
           Row(
@@ -1955,20 +2057,23 @@ class _TrackingHomeState extends State<TrackingHome> {
     );
   }
 
-  Widget _routeDetail(String label, String value) {
+  Widget _routeDetail(String label, String value, bool isDark) {
     return Column(
       children: [
         Text(
           label,
-          style: const TextStyle(fontSize: 11, color: Colors.black54),
+          style: TextStyle(
+            fontSize: 11,
+            color: isDark ? Colors.white60 : Colors.black54,
+          ),
         ),
         const SizedBox(height: 2),
         Text(
           value,
-          style: const TextStyle(
+          style: TextStyle(
             fontWeight: FontWeight.w700,
             fontSize: 14,
-            color: kInkDark,
+            color: isDark ? Colors.white : kInkDark,
           ),
         ),
       ],
@@ -2288,12 +2393,12 @@ class _TrackingHomeState extends State<TrackingHome> {
                       ),
                     ),
                     const SizedBox(width: 10),
-                    const Text(
+                    Text(
                       'Yang Memantau Anda',
                       style: TextStyle(
                         fontWeight: FontWeight.w700,
                         fontSize: 15,
-                        color: kInkDark,
+                        color: isDark ? Colors.white : kInkDark,
                       ),
                     ),
                   ],
@@ -2302,8 +2407,8 @@ class _TrackingHomeState extends State<TrackingHome> {
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
                     color: activeCount > 0
-                        ? const Color(0xFFE8F5E9)
-                        : const Color(0xFFEEEEEE),
+                        ? (isDark ? const Color(0xFF064E3B) : const Color(0xFFE8F5E9))
+                        : (isDark ? const Color(0xFF334155) : const Color(0xFFEEEEEE)),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Row(
@@ -2312,7 +2417,7 @@ class _TrackingHomeState extends State<TrackingHome> {
                       if (activeCount > 0) ...[
                         const CircleAvatar(
                           radius: 3.5,
-                          backgroundColor: Color(0xFF2E7D32),
+                          backgroundColor: Color(0xFF10B981),
                         ),
                         const SizedBox(width: 5),
                       ],
@@ -2322,8 +2427,8 @@ class _TrackingHomeState extends State<TrackingHome> {
                           fontSize: 11,
                           fontWeight: FontWeight.bold,
                           color: activeCount > 0
-                              ? const Color(0xFF2E7D32)
-                              : Colors.black54,
+                              ? (isDark ? const Color(0xFF34D399) : const Color(0xFF2E7D32))
+                              : (isDark ? Colors.white60 : Colors.black54),
                         ),
                       ),
                     ],
@@ -2336,17 +2441,17 @@ class _TrackingHomeState extends State<TrackingHome> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF9F9F9),
+                  color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF9F9F9),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Row(
+                child: Row(
                   children: [
-                    Icon(Icons.info_outline, size: 18, color: Colors.black45),
-                    SizedBox(width: 10),
+                    Icon(Icons.info_outline, size: 18, color: isDark ? Colors.white38 : Colors.black45),
+                    const SizedBox(width: 10),
                     Expanded(
                       child: Text(
                         'Belum ada yang membuka link ini. Bagikan link live ke teman/keluarga agar nama mereka muncul di sini saat memantau.',
-                        style: TextStyle(fontSize: 12, color: Colors.black54),
+                        style: TextStyle(fontSize: 12, color: isDark ? Colors.white70 : Colors.black54),
                       ),
                     ),
                   ],
@@ -2358,7 +2463,7 @@ class _TrackingHomeState extends State<TrackingHome> {
                 physics: const NeverScrollableScrollPhysics(),
                 itemCount: _viewers.length,
                 separatorBuilder: (context, index) =>
-                    const Divider(height: 16, color: Color(0xFFF0F0F0)),
+                    Divider(height: 16, color: isDark ? const Color(0xFF334155) : const Color(0xFFF0F0F0)),
                 itemBuilder: (context, index) {
                   final viewer = _viewers[index];
                   final name = viewer.displayName.trim();
@@ -2372,16 +2477,16 @@ class _TrackingHomeState extends State<TrackingHome> {
                       CircleAvatar(
                         radius: 17,
                         backgroundColor: viewer.isOnline
-                            ? const Color(0xFFE8F5E9)
-                            : const Color(0xFFF5F5F5),
+                            ? (isDark ? const Color(0xFF064E3B) : const Color(0xFFE8F5E9))
+                            : (isDark ? const Color(0xFF334155) : const Color(0xFFF5F5F5)),
                         child: Text(
                           initials,
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.bold,
                             color: viewer.isOnline
-                                ? const Color(0xFF2E7D32)
-                                : Colors.black45,
+                                ? (isDark ? const Color(0xFF34D399) : const Color(0xFF2E7D32))
+                                : (isDark ? Colors.white38 : Colors.black45),
                           ),
                         ),
                       ),
@@ -2392,10 +2497,10 @@ class _TrackingHomeState extends State<TrackingHome> {
                           children: [
                             Text(
                               viewer.displayName,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontWeight: FontWeight.w600,
                                 fontSize: 13,
-                                color: kInkDark,
+                                color: isDark ? Colors.white : kInkDark,
                               ),
                             ),
                             const SizedBox(height: 2),
@@ -2406,8 +2511,8 @@ class _TrackingHomeState extends State<TrackingHome> {
                               style: TextStyle(
                                 fontSize: 11,
                                 color: viewer.isOnline
-                                    ? const Color(0xFF168654)
-                                    : Colors.black45,
+                                    ? (isDark ? const Color(0xFF34D399) : const Color(0xFF168654))
+                                    : (isDark ? Colors.white38 : Colors.black45),
                                 fontWeight: viewer.isOnline
                                     ? FontWeight.w500
                                     : FontWeight.normal,
@@ -2428,24 +2533,27 @@ class _TrackingHomeState extends State<TrackingHome> {
   }
 
   Widget _buildBatteryModeSelector() {
+    final isDark = WaymarkApp.of(context).isDark;
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: isDark ? const Color(0xFF1E293B) : Colors.white,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFEAEAEA)),
+        border: Border.all(
+          color: isDark ? const Color(0xFF334155) : const Color(0xFFEAEAEA),
+        ),
       ),
       child: Row(
         children: [
           Icon(
             _trackingIntervalSeconds > 10 ? Icons.battery_saver : Icons.bolt,
             color: _trackingIntervalSeconds > 10
-                ? const Color(0xFF168654)
+                ? const Color(0xFF10B981)
                 : const Color(0xFFFF6B00),
             size: 20,
           ),
           const SizedBox(width: 8),
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -2454,12 +2562,15 @@ class _TrackingHomeState extends State<TrackingHome> {
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 13,
-                    color: kInkDark,
+                    color: isDark ? Colors.white : kInkDark,
                   ),
                 ),
                 Text(
                   'Atur interval GPS sesuai durasi lari',
-                  style: TextStyle(fontSize: 11, color: Colors.black54),
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: isDark ? Colors.white70 : Colors.black54,
+                  ),
                 ),
               ],
             ),
