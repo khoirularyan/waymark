@@ -459,8 +459,8 @@ export function LiveTrackerView({ token, initialSession }: LiveTrackerViewProps)
       )}
 
       {!isEmergencySos && isOffCourse && (
-        <div className="bg-amber-500/90 text-amber-950 px-4 py-1.5 shrink-0 flex items-center gap-2 text-xs font-medium z-20">
-          <AlertTriangle size={14} className="text-amber-950 shrink-0" />
+        <div className="bg-amber-500/15 border-b border-amber-500/30 text-amber-900 dark:text-amber-300 dark:bg-amber-950/60 dark:border-amber-900/60 px-4 py-1.5 shrink-0 flex items-center gap-2 text-xs font-medium z-20 backdrop-blur-xs">
+          <AlertTriangle size={14} className="text-amber-600 dark:text-amber-400 shrink-0" />
           <span>
             {isFarOffCourse
               ? `Pelari belum berada di lintasan rute (~${(offCourseMeters / 1000).toFixed(1)} km dari jalur resmi).`
@@ -579,14 +579,14 @@ export function LiveTrackerView({ token, initialSession }: LiveTrackerViewProps)
           {/* Mobile Slide-Up Modal Sheets (Full Viewport, Zero page scroll) */}
           {mobileSheet !== "none" && (
             <div className="lg:hidden absolute inset-0 bg-black/50 backdrop-blur-xs z-30 flex flex-col justify-end">
-              <div className="bg-white dark:bg-neutral-900 rounded-t-3xl shadow-2xl max-h-[82vh] flex flex-col overflow-hidden animate-in slide-in-from-bottom-5 duration-200 border-t border-neutral-200 dark:border-neutral-800">
+              <div className="bg-white dark:bg-slate-900 rounded-t-3xl shadow-2xl max-h-[82vh] flex flex-col overflow-hidden animate-in slide-in-from-bottom-5 duration-200 border-t border-neutral-200 dark:border-slate-800">
                 {/* Modal Header */}
-                <div className="flex items-center justify-between px-5 py-3.5 border-b border-neutral-100 dark:border-neutral-800">
+                <div className="flex items-center justify-between px-5 py-3.5 border-b border-neutral-100 dark:border-slate-800">
                   <div className="flex items-center gap-2">
                     {mobileSheet === "elevation" && <Mountain size={18} className="text-emerald-600 dark:text-emerald-400" />}
-                    {mobileSheet === "cheers" && <Sparkles size={18} className="text-emerald-600" />}
-                    {mobileSheet === "stats" && <Gauge size={18} className="text-emerald-600" />}
-                    <h3 className="text-sm font-bold text-neutral-900">
+                    {mobileSheet === "cheers" && <Sparkles size={18} className="text-emerald-600 dark:text-emerald-400" />}
+                    {mobileSheet === "stats" && <Gauge size={18} className="text-emerald-600 dark:text-emerald-400" />}
+                    <h3 className="text-sm font-bold text-neutral-900 dark:text-white">
                       {mobileSheet === "elevation" && "Profil Elevasi & Jalur Gunung"}
                       {mobileSheet === "cheers" && `Sorakan Penonton (${session?.cheers?.length ?? 0})`}
                       {mobileSheet === "stats" && "Rincian Info & Statistik Pelari"}
@@ -594,7 +594,7 @@ export function LiveTrackerView({ token, initialSession }: LiveTrackerViewProps)
                   </div>
                   <button
                     onClick={() => setMobileSheet("none")}
-                    className="p-1 rounded-full text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100"
+                    className="p-1 rounded-full text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-slate-800"
                   >
                     <X size={18} />
                   </button>
@@ -639,51 +639,51 @@ export function LiveTrackerView({ token, initialSession }: LiveTrackerViewProps)
                       )}
 
                       <div className="grid grid-cols-2 gap-3">
-                        <div className="rounded-xl bg-neutral-50 p-3 border border-neutral-100">
-                          <span className="flex items-center gap-1.5 text-xs text-neutral-500">
-                            <Gauge size={14} className="text-emerald-600" />
+                        <div className="rounded-xl bg-neutral-50 dark:bg-slate-800/80 p-3 border border-neutral-100 dark:border-slate-700/60">
+                          <span className="flex items-center gap-1.5 text-xs text-neutral-500 dark:text-slate-400">
+                            <Gauge size={14} className="text-emerald-600 dark:text-emerald-400" />
                             Pace Real-Time
                           </span>
-                          <p className="mt-1 text-base font-bold text-neutral-900">{paceStr}</p>
-                          <p className="text-[11px] text-neutral-400">
+                          <p className="mt-1 text-base font-bold text-neutral-900 dark:text-white">{paceStr}</p>
+                          <p className="text-[11px] text-neutral-400 dark:text-slate-400">
                             {speedKmh > 0.5 ? `${speedKmh.toFixed(1)} km/h` : "Diam"}
                           </p>
                         </div>
 
-                        <div className="rounded-xl bg-neutral-50 p-3 border border-neutral-100">
-                          <span className="flex items-center gap-1.5 text-xs text-neutral-500">
-                            <Mountain size={14} className="text-emerald-600" />
+                        <div className="rounded-xl bg-neutral-50 dark:bg-slate-800/80 p-3 border border-neutral-100 dark:border-slate-700/60">
+                          <span className="flex items-center gap-1.5 text-xs text-neutral-500 dark:text-slate-400">
+                            <Mountain size={14} className="text-emerald-600 dark:text-emerald-400" />
                             Ketinggian
                           </span>
-                          <p className="mt-1 text-base font-bold text-neutral-900">
+                          <p className="mt-1 text-base font-bold text-neutral-900 dark:text-white">
                             {latestLocation?.altitude
                               ? `${Math.round(latestLocation.altitude)} mdpl`
                               : "—"}
                           </p>
-                          <p className="text-[11px] text-neutral-400">di atas permukaan laut</p>
+                          <p className="text-[11px] text-neutral-400 dark:text-slate-400">di atas permukaan laut</p>
                         </div>
                       </div>
 
-                      <div className="rounded-xl bg-neutral-50 p-3 border border-neutral-100">
-                        <p className="text-xs text-neutral-500">Total Jarak Resmi Rute</p>
-                        <p className="text-xl font-bold text-neutral-900">{totalDistance}</p>
+                      <div className="rounded-xl bg-neutral-50 dark:bg-slate-800/80 p-3 border border-neutral-100 dark:border-slate-700/60">
+                        <p className="text-xs text-neutral-500 dark:text-slate-400">Total Jarak Resmi Rute</p>
+                        <p className="text-xl font-bold text-neutral-900 dark:text-white">{totalDistance}</p>
                         {elevationGain !== "—" && (
-                          <p className="text-xs text-neutral-500 mt-1">
-                            Total Tanjakan (D+): <strong>+{elevationGain}</strong>
+                          <p className="text-xs text-neutral-500 dark:text-slate-400 mt-1">
+                            Total Tanjakan (D+): <strong className="text-neutral-900 dark:text-white">+{elevationGain}</strong>
                           </p>
                         )}
                       </div>
 
                       {/* Spectators List */}
-                      <div className="rounded-xl border border-neutral-100 p-3 bg-white">
-                        <p className="text-xs font-bold text-neutral-800 mb-2">
+                      <div className="rounded-xl border border-neutral-100 dark:border-slate-700/60 p-3 bg-white dark:bg-slate-800/80">
+                        <p className="text-xs font-bold text-neutral-800 dark:text-slate-200 mb-2">
                           Penonton Terhubung ({session?.viewers?.length ?? 0}):
                         </p>
-                        <div className="divide-y divide-neutral-50 text-xs">
+                        <div className="divide-y divide-neutral-50 dark:divide-slate-700/40 text-xs">
                           {session?.viewers?.map((v) => (
                             <div key={v.visitorId} className="py-1.5 flex items-center justify-between">
-                              <span className="font-medium text-neutral-800">{v.displayName}</span>
-                              <span className="text-[10px] text-neutral-400">
+                              <span className="font-medium text-neutral-800 dark:text-slate-200">{v.displayName}</span>
+                              <span className="text-[10px] text-neutral-400 dark:text-slate-400">
                                 {v.isOnline ? "Online" : "Offline"}
                               </span>
                             </div>
@@ -700,17 +700,17 @@ export function LiveTrackerView({ token, initialSession }: LiveTrackerViewProps)
 
         {/* Desktop Collapsible Right Sidebar (w-[380px], Zero page scroll) */}
         {sidebarOpen && (
-          <aside className="w-[380px] xl:w-[420px] shrink-0 h-full bg-white dark:bg-neutral-900 border-l border-neutral-200/90 dark:border-neutral-800 flex flex-col z-20 shadow-xl overflow-hidden hidden lg:flex transition-colors">
+          <aside className="w-[380px] xl:w-[420px] shrink-0 h-full bg-white dark:bg-slate-900 border-l border-neutral-200/90 dark:border-slate-800 flex flex-col z-20 shadow-xl overflow-hidden hidden lg:flex transition-colors">
             {/* Sidebar Tab Header */}
-            <div className="h-12 shrink-0 border-b border-neutral-200 dark:border-neutral-800 px-4 flex items-center justify-between bg-neutral-50/50 dark:bg-neutral-850">
+            <div className="h-12 shrink-0 border-b border-neutral-200 dark:border-slate-800 px-4 flex items-center justify-between bg-neutral-50/50 dark:bg-slate-900/90">
               <div className="flex items-center gap-1">
                 <button
                   type="button"
                   onClick={() => setDesktopTab("cheers")}
                   className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
                     desktopTab === "cheers"
-                      ? "bg-white dark:bg-neutral-800 text-emerald-700 dark:text-emerald-400 shadow-2xs border border-neutral-200/80 dark:border-neutral-700"
-                      : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100"
+                      ? "bg-white dark:bg-slate-800 text-emerald-700 dark:text-emerald-400 shadow-2xs border border-neutral-200/80 dark:border-slate-700"
+                      : "text-neutral-500 dark:text-slate-400 hover:text-neutral-900 dark:hover:text-slate-100"
                   }`}
                 >
                   🎉 Sorakan ({session?.cheers?.length ?? 0})
@@ -720,8 +720,8 @@ export function LiveTrackerView({ token, initialSession }: LiveTrackerViewProps)
                   onClick={() => setDesktopTab("stats")}
                   className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
                     desktopTab === "stats"
-                      ? "bg-white dark:bg-neutral-800 text-emerald-700 dark:text-emerald-400 shadow-2xs border border-neutral-200/80 dark:border-neutral-700"
-                      : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100"
+                      ? "bg-white dark:bg-slate-800 text-emerald-700 dark:text-emerald-400 shadow-2xs border border-neutral-200/80 dark:border-slate-700"
+                      : "text-neutral-500 dark:text-slate-400 hover:text-neutral-900 dark:hover:text-slate-100"
                   }`}
                 >
                   📊 Statistik & Cuaca
@@ -736,7 +736,7 @@ export function LiveTrackerView({ token, initialSession }: LiveTrackerViewProps)
                     value={nameInput}
                     onChange={(e) => setNameInput(e.target.value)}
                     placeholder="Nama Anda..."
-                    className="h-6 w-24 rounded border border-neutral-300 px-1.5 text-[11px] focus:outline-none"
+                    className="h-6 w-24 rounded border border-neutral-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white px-1.5 text-[11px] focus:outline-none"
                     autoFocus
                   />
                   <button type="submit" className="text-[10px] bg-emerald-600 text-white px-1.5 py-0.5 rounded font-medium">
@@ -747,10 +747,10 @@ export function LiveTrackerView({ token, initialSession }: LiveTrackerViewProps)
                 <button
                   type="button"
                   onClick={() => setIsEditingName(true)}
-                  className="text-[11px] text-neutral-500 hover:text-neutral-900 truncate max-w-[120px]"
+                  className="text-[11px] text-neutral-500 dark:text-slate-400 hover:text-neutral-900 dark:hover:text-slate-200 truncate max-w-[120px]"
                   title="Ubah nama penonton Anda"
                 >
-                  Sebagai: <strong className="text-emerald-700">{displayName}</strong>
+                  Sebagai: <strong className="text-emerald-700 dark:text-emerald-400">{displayName}</strong>
                 </button>
               )}
             </div>
@@ -776,41 +776,41 @@ export function LiveTrackerView({ token, initialSession }: LiveTrackerViewProps)
                   />
 
                   {/* Spectators Section */}
-                  <div className="rounded-2xl border border-neutral-200/80 bg-neutral-50/50 p-4">
+                  <div className="rounded-2xl border border-neutral-200/80 dark:border-slate-800 bg-neutral-50/50 dark:bg-slate-800/60 p-4 transition-colors">
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
-                        <Users size={15} className="text-emerald-600" />
-                        <span className="text-xs font-bold text-neutral-800 uppercase tracking-wider">
+                        <Users size={15} className="text-emerald-600 dark:text-emerald-400" />
+                        <span className="text-xs font-bold text-neutral-800 dark:text-slate-200 uppercase tracking-wider">
                           Penonton Live ({session?.activeViewerCount ?? 1})
                         </span>
                       </div>
                       <span className="size-2 rounded-full bg-emerald-500 animate-pulse" />
                     </div>
 
-                    <div className="divide-y divide-neutral-100 text-xs">
+                    <div className="divide-y divide-neutral-100 dark:divide-slate-700/50 text-xs">
                       {session?.viewers && session.viewers.length > 0 ? (
                         session.viewers.map((v) => (
                           <div key={v.visitorId} className="flex items-center justify-between py-2">
                             <div className="flex items-center gap-2">
                               <span
                                 className={`size-2 rounded-full ${
-                                  v.isOnline ? "bg-emerald-500" : "bg-neutral-300"
+                                  v.isOnline ? "bg-emerald-500" : "bg-neutral-300 dark:bg-slate-600"
                                 }`}
                               />
-                              <span className="font-medium text-neutral-800">{v.displayName}</span>
+                              <span className="font-medium text-neutral-800 dark:text-slate-200">{v.displayName}</span>
                               {v.visitorId === visitorId && (
-                                <span className="bg-emerald-100 text-emerald-800 text-[10px] px-1 py-0.2 rounded font-semibold">
+                                <span className="bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 text-[10px] px-1 py-0.2 rounded font-semibold">
                                   Anda
                                 </span>
                               )}
                             </div>
-                            <span className="text-[11px] text-neutral-400">
+                            <span className="text-[11px] text-neutral-400 dark:text-slate-500">
                               {v.isOnline ? "Online" : "Offline"}
                             </span>
                           </div>
                         ))
                       ) : (
-                        <p className="py-2 text-xs text-neutral-400">Belum ada penonton lain.</p>
+                        <p className="py-2 text-xs text-neutral-400 dark:text-slate-500">Belum ada penonton lain.</p>
                       )}
                     </div>
                   </div>
@@ -823,74 +823,74 @@ export function LiveTrackerView({ token, initialSession }: LiveTrackerViewProps)
                     <WeatherCard latitude={currentPos[1]} longitude={currentPos[0]} />
                   )}
 
-                  <div className="rounded-2xl border border-neutral-200/80 bg-white p-4 shadow-2xs space-y-3">
-                    <p className="text-xs font-bold uppercase tracking-wider text-neutral-500">
+                  <div className="rounded-2xl border border-neutral-200/80 dark:border-slate-800 bg-white dark:bg-slate-800/60 p-4 shadow-2xs space-y-3 transition-colors">
+                    <p className="text-xs font-bold uppercase tracking-wider text-neutral-500 dark:text-slate-400">
                       Metrik Live Pelari
                     </p>
 
                     <div className="grid grid-cols-2 gap-3">
-                      <div className="rounded-xl bg-neutral-50 p-3 border border-neutral-100">
-                        <span className="flex items-center gap-1.5 text-xs text-neutral-500">
-                          <Gauge size={14} className="text-emerald-600" />
+                      <div className="rounded-xl bg-neutral-50 dark:bg-slate-900/60 p-3 border border-neutral-100 dark:border-slate-700/50">
+                        <span className="flex items-center gap-1.5 text-xs text-neutral-500 dark:text-slate-400">
+                          <Gauge size={14} className="text-emerald-600 dark:text-emerald-400" />
                           Pace Saat Ini
                         </span>
-                        <p className="mt-1 text-base font-bold text-neutral-900">{paceStr}</p>
-                        <p className="text-[11px] text-neutral-400">
+                        <p className="mt-1 text-base font-bold text-neutral-900 dark:text-white">{paceStr}</p>
+                        <p className="text-[11px] text-neutral-400 dark:text-slate-400">
                           {speedKmh > 0.5 ? `${speedKmh.toFixed(1)} km/h` : "Diam"}
                         </p>
                       </div>
 
-                      <div className="rounded-xl bg-neutral-50 p-3 border border-neutral-100">
-                        <span className="flex items-center gap-1.5 text-xs text-neutral-500">
-                          <Mountain size={14} className="text-emerald-600" />
+                      <div className="rounded-xl bg-neutral-50 dark:bg-slate-900/60 p-3 border border-neutral-100 dark:border-slate-700/50">
+                        <span className="flex items-center gap-1.5 text-xs text-neutral-500 dark:text-slate-400">
+                          <Mountain size={14} className="text-emerald-600 dark:text-emerald-400" />
                           Elevasi
                         </span>
-                        <p className="mt-1 text-base font-bold text-neutral-900">
+                        <p className="mt-1 text-base font-bold text-neutral-900 dark:text-white">
                           {latestLocation?.altitude
                             ? `${Math.round(latestLocation.altitude)} mdpl`
                             : "—"}
                         </p>
-                        <p className="text-[11px] text-neutral-400">di atas laut</p>
+                        <p className="text-[11px] text-neutral-400 dark:text-slate-400">di atas laut</p>
                       </div>
                     </div>
 
-                    <div className="pt-2 border-t border-neutral-100 flex items-center justify-between">
+                    <div className="pt-2 border-t border-neutral-100 dark:border-slate-700/50 flex items-center justify-between">
                       <div>
-                        <p className="text-lg font-bold text-neutral-900">{totalDistance}</p>
-                        <p className="text-xs text-neutral-500">Total rute resmi</p>
+                        <p className="text-lg font-bold text-neutral-900 dark:text-white">{totalDistance}</p>
+                        <p className="text-xs text-neutral-500 dark:text-slate-400">Total rute resmi</p>
                       </div>
-                      <div className="grid size-9 place-items-center rounded-xl bg-emerald-50 text-emerald-700">
+                      <div className="grid size-9 place-items-center rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400">
                         <Route size={18} />
                       </div>
                     </div>
 
                     {elevationGain !== "—" && (
-                      <p className="text-xs text-neutral-500">
-                        Total tanjakan (D+): <strong className="text-neutral-900">+{elevationGain}</strong>
+                      <p className="text-xs text-neutral-500 dark:text-slate-400">
+                        Total tanjakan (D+): <strong className="text-neutral-900 dark:text-white">+{elevationGain}</strong>
                       </p>
                     )}
                   </div>
 
                   {/* GPS Coordinates card */}
-                  <div className="rounded-2xl border border-neutral-200/80 bg-white p-4 text-xs space-y-2">
-                    <p className="font-bold text-neutral-700 flex items-center gap-1.5">
-                      <Signal size={14} className="text-emerald-600" />
+                  <div className="rounded-2xl border border-neutral-200/80 dark:border-slate-800 bg-white dark:bg-slate-800/60 p-4 text-xs space-y-2 transition-colors">
+                    <p className="font-bold text-neutral-700 dark:text-slate-200 flex items-center gap-1.5">
+                      <Signal size={14} className="text-emerald-600 dark:text-emerald-400" />
                       Status Pembaruan Satelit
                     </p>
-                    <p className="text-neutral-500">
+                    <p className="text-neutral-500 dark:text-slate-400">
                       Koordinat:{" "}
-                      <strong className="text-neutral-800">
+                      <strong className="text-neutral-800 dark:text-slate-200">
                         {currentPos
                           ? `${currentPos[1].toFixed(5)}, ${currentPos[0].toFixed(5)}`
                           : "—"}
                       </strong>
                     </p>
-                    <p className="text-neutral-400 text-[11px]">Terakhir: {lastUpdateText}</p>
+                    <p className="text-neutral-400 dark:text-slate-500 text-[11px]">Terakhir: {lastUpdateText}</p>
                     {currentPos && (
                       <button
                         type="button"
                         onClick={handleCopyCoords}
-                        className="inline-flex items-center gap-1 rounded bg-neutral-100 hover:bg-neutral-200 px-2 py-1 text-[11px] font-semibold text-neutral-700 transition-colors"
+                        className="inline-flex items-center gap-1 rounded bg-neutral-100 dark:bg-slate-700 hover:bg-neutral-200 dark:hover:bg-slate-600 px-2 py-1 text-[11px] font-semibold text-neutral-700 dark:text-slate-200 transition-colors"
                       >
                         <Copy size={11} />
                         {copiedCoords ? "Tersalin!" : "Salin Koordinat"}

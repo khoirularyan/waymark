@@ -186,17 +186,17 @@ export function ElevationProfile({
   const displayAltitude = currentAltitude ?? currentPoint.ele;
 
   return (
-    <div className="rounded-2xl border border-neutral-200/80 bg-white p-5 shadow-xs">
+    <div className="rounded-2xl border border-neutral-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-xs transition-colors">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <div className="flex size-8 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700">
+          <div className="flex size-8 items-center justify-center rounded-lg bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400">
             <Mountain size={18} />
           </div>
           <div>
-            <h3 className="text-sm font-semibold text-neutral-900">
+            <h3 className="text-sm font-semibold text-neutral-900 dark:text-white">
               Profil Elevasi & Jalur Gunung
             </h3>
-            <p className="text-xs text-neutral-500">
+            <p className="text-xs text-neutral-500 dark:text-slate-400">
               Posisi pelari pada kontur tanjakan dan turunan
             </p>
           </div>
@@ -205,28 +205,28 @@ export function ElevationProfile({
         {/* Quick Stats Pills */}
         <div className="flex flex-wrap items-center gap-2 text-xs">
           {isOffCourse && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2.5 py-1 font-medium text-rose-800 border border-rose-200">
-              <AlertTriangle size={13} className="text-rose-600" />
-              Status: <strong className="text-rose-950">Di Luar Jalur ({offCourseKm >= 1 ? `${offCourseKm.toFixed(1)} km` : `${Math.round(offCourseKm * 1000)} m`})</strong>
+            <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 dark:bg-rose-950/50 px-2.5 py-1 font-medium text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-900/60">
+              <AlertTriangle size={13} className="text-rose-600 dark:text-rose-400" />
+              Status: <strong className="text-rose-950 dark:text-rose-200">Di Luar Jalur ({offCourseKm >= 1 ? `${offCourseKm.toFixed(1)} km` : `${Math.round(offCourseKm * 1000)} m`})</strong>
             </span>
           )}
-          <span className="inline-flex items-center gap-1 rounded-full bg-neutral-100 px-2.5 py-1 font-medium text-neutral-700">
-            <TrendingUp size={13} className="text-emerald-600" />
-            Elevasi: <strong className="text-neutral-900">{displayAltitude} mdpl</strong>
+          <span className="inline-flex items-center gap-1 rounded-full bg-neutral-100 dark:bg-slate-800 px-2.5 py-1 font-medium text-neutral-700 dark:text-slate-300 border border-neutral-200/40 dark:border-slate-700/60">
+            <TrendingUp size={13} className="text-emerald-600 dark:text-emerald-400" />
+            Elevasi: <strong className="text-neutral-900 dark:text-white">{displayAltitude} mdpl</strong>
           </span>
-          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 font-medium text-emerald-800">
-            <Compass size={13} className="text-emerald-600" />
-            Sisa Jarak: <strong className="text-emerald-950">{remainingKm.toFixed(1)} km</strong>
+          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 dark:bg-emerald-950/50 px-2.5 py-1 font-medium text-emerald-800 dark:text-emerald-300 border border-emerald-200/40 dark:border-emerald-800/40">
+            <Compass size={13} className="text-emerald-600 dark:text-emerald-400" />
+            Sisa Jarak: <strong className="text-emerald-950 dark:text-emerald-200">{remainingKm.toFixed(1)} km</strong>
           </span>
-          <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 font-medium text-amber-800">
-            <Flag size={13} className="text-amber-600" />
-            Sisa D+: <strong className="text-amber-950">+{remainingEleGain} m</strong>
+          <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 dark:bg-amber-950/50 px-2.5 py-1 font-medium text-amber-800 dark:text-amber-300 border border-amber-200/40 dark:border-amber-800/40">
+            <Flag size={13} className="text-amber-600 dark:text-amber-400" />
+            Sisa D+: <strong className="text-amber-950 dark:text-amber-200">+{remainingEleGain} m</strong>
           </span>
         </div>
       </div>
 
       {/* SVG Elevation Chart */}
-      <div className="relative w-full overflow-hidden rounded-xl bg-neutral-50/70 p-2 border border-neutral-100">
+      <div className="relative w-full overflow-hidden rounded-xl bg-neutral-50/70 dark:bg-slate-950/80 p-2 border border-neutral-100 dark:border-slate-800/80">
         <svg
           viewBox={`0 0 ${width} ${height}`}
           className="w-full h-auto"
@@ -249,7 +249,8 @@ export function ElevationProfile({
             y1={paddingTop}
             x2={width - paddingX}
             y2={paddingTop}
-            stroke="#e5e5e5"
+            stroke="currentColor"
+            className="text-neutral-200 dark:text-slate-800"
             strokeDasharray="4 4"
           />
           <line
@@ -257,7 +258,8 @@ export function ElevationProfile({
             y1={paddingTop + chartH / 2}
             x2={width - paddingX}
             y2={paddingTop + chartH / 2}
-            stroke="#e5e5e5"
+            stroke="currentColor"
+            className="text-neutral-200 dark:text-slate-800"
             strokeDasharray="4 4"
           />
           <line
@@ -265,7 +267,8 @@ export function ElevationProfile({
             y1={paddingTop + chartH}
             x2={width - paddingX}
             y2={paddingTop + chartH}
-            stroke="#d4d4d4"
+            stroke="currentColor"
+            className="text-neutral-300 dark:text-slate-700"
           />
 
           {/* Elevation area fill */}
@@ -312,20 +315,21 @@ export function ElevationProfile({
           )}
 
           {/* Axis labels */}
-          <text x={paddingX} y={height - 8} fontSize="11" fill="#737373" fontWeight="500">
+          <text x={paddingX} y={height - 8} fontSize="11" fill="currentColor" className="text-neutral-500 dark:text-slate-400" fontWeight="500">
             0 km (Start: {minEle}m)
           </text>
           <text
             x={width - paddingX}
             y={height - 8}
             fontSize="11"
-            fill="#737373"
+            fill="currentColor"
+            className="text-neutral-500 dark:text-slate-400"
             fontWeight="500"
             textAnchor="end"
           >
             {totalDist.toFixed(1)} km (Finish)
           </text>
-          <text x={paddingX} y={paddingTop - 6} fontSize="10" fill="#a3a3a3">
+          <text x={paddingX} y={paddingTop - 6} fontSize="10" fill="currentColor" className="text-neutral-400 dark:text-slate-500">
             Puncak: {maxEle} mdpl
           </text>
         </svg>
@@ -333,7 +337,7 @@ export function ElevationProfile({
         {/* Runner indicator pill (only when on-course) */}
         {!isOffCourse && (
           <div
-            className="absolute -translate-x-1/2 rounded-md bg-neutral-900/90 px-2 py-0.5 text-[10px] font-semibold text-white shadow-md backdrop-blur-xs pointer-events-none"
+            className="absolute -translate-x-1/2 rounded-md bg-neutral-900/90 dark:bg-slate-900/95 border border-transparent dark:border-slate-700 px-2 py-0.5 text-[10px] font-semibold text-white shadow-md backdrop-blur-xs pointer-events-none"
             style={{
               left: `${(runnerX / width) * 100}%`,
               top: `${Math.max(6, (runnerY / height) * 100 - 18)}%`,
@@ -346,7 +350,7 @@ export function ElevationProfile({
         {/* Off-course / Not yet on route warning banner overlay */}
         {isOffCourse && (
           <div className="absolute inset-x-4 top-1/2 -translate-y-1/2 flex items-center justify-center pointer-events-none">
-            <div className="flex items-center gap-2 rounded-xl bg-neutral-900/85 px-4 py-2.5 text-xs font-medium text-white shadow-lg backdrop-blur-xs border border-neutral-700/60">
+            <div className="flex items-center gap-2 rounded-xl bg-neutral-900/85 dark:bg-slate-900/90 px-4 py-2.5 text-xs font-medium text-white shadow-lg backdrop-blur-xs border border-neutral-700/60 dark:border-slate-700/60">
               <AlertTriangle size={15} className="text-amber-400 shrink-0" />
               <span>
                 Pelari belum berada di lintasan rute resmi (<strong>{offCourseKm >= 1 ? `${offCourseKm.toFixed(1)} km` : `${Math.round(offCourseKm * 1000)} m`}</strong> ke rute terdekat)

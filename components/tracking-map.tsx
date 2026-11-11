@@ -346,7 +346,7 @@ export function TrackingMap({
       <div ref={container} className="absolute inset-0" />
 
       {/* Top Left Status Badge */}
-      <div className="absolute left-4 top-4 flex items-center gap-2 rounded-full bg-white/95 px-3.5 py-1.5 text-xs font-semibold shadow-xs backdrop-blur-xs">
+      <div className="absolute left-4 top-4 flex items-center gap-2 rounded-full border border-neutral-200/50 dark:border-slate-800 bg-white/95 dark:bg-slate-900/90 px-3.5 py-1.5 text-xs font-semibold shadow-xs backdrop-blur-xs transition-colors">
         <span className="relative flex size-2.5">
           <span
             className={`absolute inline-flex size-full rounded-full ${
@@ -361,7 +361,7 @@ export function TrackingMap({
             }`}
           />
         </span>
-        <span className="text-neutral-800">
+        <span className="text-neutral-800 dark:text-slate-200">
           {isReplayMode
             ? `REPLAY • ${replayIndex + 1}/${trackCoordinates.length} Titik`
             : currentPosition
@@ -373,14 +373,14 @@ export function TrackingMap({
       {/* Top Right Controls: Map Layer Switcher & Replay Trigger */}
       <div className="absolute right-4 top-4 flex items-center gap-2">
         {/* Layer Switcher Pill */}
-        <div className="flex overflow-hidden rounded-xl border border-neutral-200/90 bg-white/95 p-0.5 shadow-xs backdrop-blur-xs text-xs font-medium">
+        <div className="flex overflow-hidden rounded-xl border border-neutral-200/90 dark:border-slate-800 bg-white/95 dark:bg-slate-900/90 p-0.5 shadow-xs backdrop-blur-xs text-xs font-medium transition-colors">
           <button
             type="button"
             onClick={() => setMapLayer("outdoor")}
             className={`flex items-center gap-1 rounded-lg px-2.5 py-1 transition-colors ${
               mapLayer === "outdoor"
-                ? "bg-neutral-900 text-white shadow-2xs"
-                : "text-neutral-600 hover:text-neutral-900"
+                ? "bg-neutral-900 dark:bg-slate-800 text-white shadow-2xs"
+                : "text-neutral-600 dark:text-slate-400 hover:text-neutral-900 dark:hover:text-white"
             }`}
           >
             <Layers size={13} />
@@ -392,7 +392,7 @@ export function TrackingMap({
             className={`flex items-center gap-1 rounded-lg px-2.5 py-1 transition-colors ${
               mapLayer === "satellite"
                 ? "bg-emerald-600 text-white shadow-2xs"
-                : "text-neutral-600 hover:text-neutral-900"
+                : "text-neutral-600 dark:text-slate-400 hover:text-neutral-900 dark:hover:text-white"
             }`}
           >
             <span>🛰️ Satelit</span>
@@ -406,8 +406,8 @@ export function TrackingMap({
             onClick={isReplayMode ? handleExitReplay : handleStartReplay}
             className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold shadow-xs backdrop-blur-xs transition-colors ${
               isReplayMode
-                ? "border-amber-300 bg-amber-50 text-amber-900"
-                : "border-neutral-200 bg-white/95 text-neutral-800 hover:border-emerald-500"
+                ? "border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/60 text-amber-900 dark:text-amber-300"
+                : "border-neutral-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900/90 text-neutral-800 dark:text-slate-200 hover:border-emerald-500"
             }`}
           >
             {isReplayMode ? (
@@ -485,18 +485,18 @@ export function TrackingMap({
       )}
 
       {/* Map Zoom & Locate Controls */}
-      <div className="absolute bottom-5 right-4 flex flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-xs">
+      <div className="absolute bottom-5 right-4 flex flex-col overflow-hidden rounded-xl border border-neutral-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs transition-colors">
         <button
           onClick={() => map.current?.zoomIn()}
           aria-label="Zoom in"
-          className="grid size-9 place-items-center border-b border-neutral-100 text-neutral-700 hover:bg-neutral-50"
+          className="grid size-9 place-items-center border-b border-neutral-100 dark:border-slate-800 text-neutral-700 dark:text-slate-300 hover:bg-neutral-50 dark:hover:bg-slate-800 transition-colors"
         >
           <Plus size={16} />
         </button>
         <button
           onClick={() => map.current?.zoomOut()}
           aria-label="Zoom out"
-          className="grid size-9 place-items-center border-b border-neutral-100 text-neutral-700 hover:bg-neutral-50"
+          className="grid size-9 place-items-center border-b border-neutral-100 dark:border-slate-800 text-neutral-700 dark:text-slate-300 hover:bg-neutral-50 dark:hover:bg-slate-800 transition-colors"
         >
           <Minus size={16} />
         </button>
@@ -504,14 +504,14 @@ export function TrackingMap({
           onClick={handleLocateRunner}
           aria-label="Locate runner"
           title="Fokus ke lokasi pelari"
-          className="grid size-9 place-items-center text-emerald-600 hover:bg-neutral-50"
+          className="grid size-9 place-items-center text-emerald-600 dark:text-emerald-400 hover:bg-neutral-50 dark:hover:bg-slate-800 transition-colors"
         >
           <LocateFixed size={17} />
         </button>
       </div>
 
       {/* Color-Coded Map Legend */}
-      <div className="absolute bottom-5 left-4 flex flex-wrap items-center gap-3 rounded-xl border border-neutral-200/90 bg-white/95 px-3.5 py-2 text-xs font-medium text-neutral-800 shadow-xs backdrop-blur-xs">
+      <div className="absolute bottom-5 left-4 flex flex-wrap items-center gap-3 rounded-xl border border-neutral-200/90 dark:border-slate-800 bg-white/95 dark:bg-slate-900/90 px-3.5 py-2 text-xs font-medium text-neutral-800 dark:text-slate-200 shadow-xs backdrop-blur-xs transition-colors">
         <div className="flex items-center gap-1.5">
           <span className="inline-block h-1.5 w-5 rounded-full bg-[#FF6B00]" />
           <span>Rute GPX</span>
@@ -521,7 +521,7 @@ export function TrackingMap({
           <span>Jejak Pelari</span>
         </div>
         {currentPosition && (
-          <div className="flex items-center gap-1.5 text-emerald-700">
+          <div className="flex items-center gap-1.5 text-emerald-700 dark:text-emerald-400">
             <span className="size-2 rounded-full bg-[#10B981]" />
             <span>Pelari</span>
           </div>

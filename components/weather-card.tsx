@@ -82,26 +82,26 @@ export function WeatherCard({ latitude, longitude }: WeatherCardProps) {
   };
 
   return (
-    <div className="flex items-center gap-3 rounded-xl border border-neutral-200/80 bg-white px-3.5 py-2.5 shadow-xs">
-      <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-600">
+    <div className="flex items-center gap-3 rounded-xl border border-neutral-200/80 dark:border-slate-700/60 bg-white dark:bg-slate-800/80 px-3.5 py-2.5 shadow-xs transition-colors">
+      <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-sky-50 dark:bg-sky-950/50 text-sky-600 dark:text-sky-400">
         {weather ? renderIcon(weather.weatherCode) : <CloudSun size={20} />}
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold text-neutral-900">
+          <span className="text-sm font-semibold text-neutral-900 dark:text-white">
             {weather ? `${weather.temp}°C` : "—"}
           </span>
-          <span className="text-xs font-medium text-neutral-600 truncate">
+          <span className="text-xs font-medium text-neutral-600 dark:text-slate-300 truncate">
             {weather?.condition ?? "Memuat cuaca..."}
           </span>
         </div>
-        <div className="mt-0.5 flex items-center gap-3 text-[11px] text-neutral-500">
+        <div className="mt-0.5 flex items-center gap-3 text-[11px] text-neutral-500 dark:text-slate-400">
           <span className="inline-flex items-center gap-1">
             <Droplets size={12} className="text-sky-500" />
             {weather?.humidity ?? "—"}%
           </span>
           <span className="inline-flex items-center gap-1">
-            <Wind size={12} className="text-neutral-400" />
+            <Wind size={12} className="text-neutral-400 dark:text-slate-500" />
             {weather?.windSpeed ?? "—"} km/h
           </span>
         </div>
