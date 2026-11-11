@@ -56,8 +56,9 @@ function distanceMeters(lat1: number, lon1: number, lat2: number, lon2: number):
 export function LiveTrackerView({ token, initialSession }: LiveTrackerViewProps) {
   const [session, setSession] = useState<Session | null>(initialSession);
   const [visitorId, setVisitorId] = useState<string>("");
-  const [displayName, setDisplayName] = useState<string>("Tamu");
+  const [displayName, setDisplayName] = useState<string>("Penonton");
   const [isEditingName, setIsEditingName] = useState(false);
+  const [showNameModal, setShowNameModal] = useState(false);
   const [nameInput, setNameInput] = useState("");
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedCoords, setCopiedCoords] = useState(false);
@@ -118,16 +119,34 @@ export function LiveTrackerView({ token, initialSession }: LiveTrackerViewProps)
     setVisitorId(vid);
 
     const savedName = localStorage.getItem("waymark_viewer_name");
-    if (savedName) {
-      setDisplayName(savedName);
-      setNameInput(savedName);
+    if (savedName && savedName.trim().length > 0) {
+      setDisplayName(savedName.trim());
+      setNameInput(savedName.trim());
+      setShowNameModal(false);
     } else {
-      const defaultName = "Teman #" + vid.slice(-4);
-      setDisplayName(defaultName);
-      setNameInput(defaultName);
-      localStorage.setItem("waymark_viewer_name", defaultName);
+      setDisplayName("");
+      setNameInput("");
+      setShowNameModal(true);
     }
   }, []);
+
+  const handleInitialNameSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = nameInput.trim() || "Penonton";
+    setDisplayName(trimmed);
+    localStorage.setItem("waymark_viewer_name", trimmed);
+    setShowNameModal(false);
+
+    if (visitorId) {
+      try {
+        await fetch(`/api/tracking/${token}/viewer`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ visitorId, displayName: trimmed }),
+        });
+      } catch (_) {}
+    }
+  };
 
   // Heartbeat viewer ping (Fast 3-second heartbeat for real-time presence)
   useEffect(() => {
@@ -268,6 +287,43 @@ export function LiveTrackerView({ token, initialSession }: LiveTrackerViewProps)
 
   return (
     <main className="h-screen h-[100dvh] w-screen overflow-hidden flex flex-col bg-[#fbfbfa] dark:bg-[#0b0f17] text-neutral-900 dark:text-neutral-100 select-none transition-colors">
+      {/* 0. WELCOME / SPECTATOR NAME MODAL (Shown automatically on first visit) */}
+      {showNameModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+          <div className="w-full max-w-sm rounded-3xl bg-white dark:bg-neutral-900 p-6 shadow-2xl border border-neutral-200 dark:border-neutral-800 text-center animate-in zoom-in-95 duration-200">
+            <div className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 mb-4">
+              <Users size={28} />
+            </div>
+            <h2 className="text-lg font-bold text-neutral-900 dark:text-neutral-100">
+              Pantau Live Tracking
+            </h2>
+            <p className="mt-1.5 text-xs text-neutral-500 dark:text-neutral-400">
+              Masukkan nama Anda agar <strong>{runnerName}</strong> tahu siapa yang sedang memantau & menyemangatinya di lintasan.
+            </p>
+
+            <form onSubmit={handleInitialNameSubmit} className="mt-5 space-y-3">
+              <input
+                type="text"
+                autoFocus
+                required
+                value={nameInput}
+                onChange={(e) => setNameInput(e.target.value)}
+                placeholder="Nama Anda (contoh: Budi / Kakak)"
+                maxLength={40}
+                className="w-full rounded-xl border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-4 py-2.5 text-sm text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:border-emerald-500 focus:bg-white dark:focus:bg-neutral-850 focus:outline-none"
+              />
+              <button
+                type="submit"
+                disabled={!nameInput.trim()}
+                className="w-full rounded-xl bg-emerald-600 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors shadow-sm"
+              >
+                Simpan & Mulai Nonton
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* 1. TOP NAVBAR (Sleek, h-14, Zero page scroll) */}
       <header className="h-14 shrink-0 bg-white/95 dark:bg-neutral-900/95 backdrop-blur-md border-b border-neutral-200/90 dark:border-neutral-800 px-4 sm:px-6 flex items-center justify-between z-30 shadow-xs transition-colors">
         {/* Left: Brand + Runner Info */}
