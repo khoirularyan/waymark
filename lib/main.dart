@@ -441,6 +441,41 @@ class _TrackingHomeState extends State<TrackingHome> {
       battery = await Battery().batteryLevel;
     } catch (_) {}
 
+    // 1. Strict GPS Quality & Accuracy Filter:
+    // Discard low-accuracy cellular/Wi-Fi triangulation fixes (accuracy > 35m)
+    // to prevent erratic zig-zags and jumps into distant fields or cell towers.
+    if (position.accuracy > 35.0 && !_isSos) {
+      debugPrint('Skipping inaccurate GPS fix: accuracy ${position.accuracy}m > 35m');
+      if (mounted) {
+        setState(() {
+          _batteryLevel = battery;
+          _isLocating = false;
+        });
+      }
+      return;
+    }
+
+    final now = DateTime.now();
+
+    // 2. Outlier Teleportation Jump Filter:
+    // If displacement implies impossible human foot speed (> 12.5 m/s = 45 km/jam)
+    if (_lastSentPosition != null && _lastSentTime != null && !_isSos) {
+      final distMeters = Geolocator.distanceBetween(
+        _lastSentPosition!.latitude,
+        _lastSentPosition!.longitude,
+        position.latitude,
+        position.longitude,
+      );
+      final elapsedSec = now.difference(_lastSentTime!).inSeconds;
+      if (elapsedSec > 0) {
+        final impliedSpeedMps = distMeters / elapsedSec;
+        if (impliedSpeedMps > 12.5 && position.accuracy > 15.0) {
+          debugPrint('Rejected GPS teleport spike: $distMeters m in $elapsedSec s (${(impliedSpeedMps * 3.6).toStringAsFixed(1)} km/h, acc: ${position.accuracy}m)');
+          return;
+        }
+      }
+    }
+
     final speedKmh = position.speed * 3.6;
     String paceStr = "—";
     if (speedKmh > 0.5) {
@@ -480,7 +515,6 @@ class _TrackingHomeState extends State<TrackingHome> {
     // Smart Battery Throttle:
     // When stationary (<3m displacement) and not in SOS mode, avoid continuous cellular radio wakeups.
     // Instead, rely on periodic heartbeat (30s normal / 60s ultra eco).
-    final now = DateTime.now();
     if (_lastSentPosition != null && _lastSentTime != null && !_isSos) {
       final distMeters = Geolocator.distanceBetween(
         _lastSentPosition!.latitude,
@@ -663,10 +697,8 @@ class _TrackingHomeState extends State<TrackingHome> {
     LocationSettings settings;
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
       settings = AndroidSettings(
-        accuracy: _trackingIntervalSeconds > 10
-            ? LocationAccuracy.medium
-            : LocationAccuracy.high,
-        distanceFilter: _trackingIntervalSeconds > 10 ? 15 : 5,
+        accuracy: LocationAccuracy.high, // Always high-accuracy GPS hardware!
+        distanceFilter: _trackingIntervalSeconds > 10 ? 8 : 3,
         intervalDuration: Duration(seconds: _trackingIntervalSeconds),
         foregroundNotificationConfig: const ForegroundNotificationConfig(
           notificationTitle: 'Waymark Live Tracking Aktif',
@@ -678,10 +710,8 @@ class _TrackingHomeState extends State<TrackingHome> {
       );
     } else {
       settings = LocationSettings(
-        accuracy: _trackingIntervalSeconds > 10
-            ? LocationAccuracy.medium
-            : LocationAccuracy.high,
-        distanceFilter: _trackingIntervalSeconds > 10 ? 15 : 5,
+        accuracy: LocationAccuracy.high,
+        distanceFilter: _trackingIntervalSeconds > 10 ? 8 : 3,
       );
     }
 
@@ -756,7 +786,11 @@ class _TrackingHomeState extends State<TrackingHome> {
             timeLimit: Duration(seconds: 10),
           ),
         );
-        await _handleNewPosition(initialPos);
+        if (initialPos.accuracy <= 35.0) {
+          await _handleNewPosition(initialPos);
+        } else {
+          debugPrint('Initial fix skipped due to poor accuracy (${initialPos.accuracy}m)');
+        }
       } catch (err) {
         debugPrint('Initial GPS fetch error: $err');
       }
