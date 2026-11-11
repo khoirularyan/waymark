@@ -202,6 +202,18 @@ export async function getSession(token: string): Promise<Session | null> {
 
     const viewers = getActiveViewers(token);
 
+    const memLocations = memorySession?.locations ?? [];
+    const mergedLocations =
+      memLocations.length >= locations.length
+        ? memLocations
+        : locations.map((loc, idx) => ({
+            ...loc,
+            altitude: memLocations[idx]?.altitude,
+            speed: memLocations[idx]?.speed,
+            heading: memLocations[idx]?.heading,
+            isSos: memLocations[idx]?.isSos,
+          }));
+
     const session: Session = {
       id: sessionRow.id,
       shareToken: sessionRow.share_token,
@@ -210,7 +222,7 @@ export async function getSession(token: string): Promise<Session | null> {
       status: sessionRow.status,
       startedAt: sessionRow.started_at,
       finishedAt: sessionRow.finished_at,
-      locations: locations.length > 0 ? locations : (memorySession?.locations ?? []),
+      locations: mergedLocations.length > 0 ? mergedLocations : locations,
       route: routeRow
         ? {
             routeGeojson: routeRow.route_geojson,
