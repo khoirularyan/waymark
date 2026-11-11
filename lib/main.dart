@@ -131,6 +131,8 @@ class _TrackingHomeState extends State<TrackingHome> {
   bool _gpsReady = false;
   bool _isLocating = false;
   int _batteryLevel = 100;
+  String? _runnerId;
+  String _runnerName = 'Waymark Runner';
   String? _sessionToken;
   String? _lastUpdateTime;
   String? _lastCoords;
@@ -190,6 +192,19 @@ class _TrackingHomeState extends State<TrackingHome> {
 
     try {
       final prefs = await SharedPreferences.getInstance();
+
+      final savedRunnerId = prefs.getString('runner_id');
+      if (savedRunnerId == null || savedRunnerId.isEmpty) {
+        final randomSuffix = (DateTime.now().millisecondsSinceEpoch % 1000000)
+            .toString()
+            .padLeft(6, '0');
+        _runnerId = 'runner_$randomSuffix';
+        await prefs.setString('runner_id', _runnerId!);
+      } else {
+        _runnerId = savedRunnerId;
+      }
+      _runnerName = prefs.getString('runner_name') ?? 'Waymark Runner';
+
       final savedQueueJson = prefs.getString('offline_queue');
       if (savedQueueJson != null) {
         final List<dynamic> decoded = jsonDecode(savedQueueJson);
@@ -763,13 +778,15 @@ class _TrackingHomeState extends State<TrackingHome> {
           : null;
 
       final customTitle = _titleController.text.trim();
-      _sessionToken = await api.start(
-        runnerName: 'Waymark Runner',
+      final startRes = await api.start(
+        runnerName: _runnerName,
         eventName: customTitle.isNotEmpty
             ? customTitle
             : (_selectedRoute?.name ?? 'Outdoor session'),
+        runnerId: _runnerId,
         route: routePayload,
       );
+      _sessionToken = startRes.shareToken;
 
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('session_token', _sessionToken!);
@@ -888,12 +905,13 @@ class _TrackingHomeState extends State<TrackingHome> {
   }
 
   void _shareTrackingLink() {
-    if (_sessionToken == null) return;
-    final url = '${api.baseUrl}/live/$_sessionToken';
+    final liveSlug = _runnerId ?? _sessionToken;
+    if (liveSlug == null) return;
+    final url = '${api.baseUrl}/live/$liveSlug';
     Clipboard.setData(ClipboardData(text: url));
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Link live tracking berhasil disalin ke clipboard!'),
+        content: Text('Link live tracking permanen berhasil disalin!'),
         backgroundColor: Color(0xFF168654),
         behavior: SnackBarBehavior.floating,
       ),
@@ -901,7 +919,8 @@ class _TrackingHomeState extends State<TrackingHome> {
   }
 
   Widget _buildShareLinkCard() {
-    if (!_isLive || _sessionToken == null) return const SizedBox.shrink();
+    final liveSlug = _runnerId ?? _sessionToken;
+    if (liveSlug == null) return const SizedBox.shrink();
     final isDark = WaymarkApp.of(context).isDark;
     return Card(
       elevation: 0,
@@ -923,21 +942,51 @@ class _TrackingHomeState extends State<TrackingHome> {
               children: [
                 const Icon(Icons.share, color: Color(0xFF10B981), size: 18),
                 const SizedBox(width: 8),
-                Text(
-                  'Link Live Tracking untuk Pemantau',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: isDark
-                        ? const Color(0xFF34D399)
-                        : const Color(0xFF15803D),
-                    fontSize: 14,
+                Expanded(
+                  child: Text(
+                    _isLive
+                        ? 'Link Live Tracking (Aktif)'
+                        : 'Link Live Permanen Pelari',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: isDark
+                          ? const Color(0xFF34D399)
+                          : const Color(0xFF15803D),
+                      fontSize: 14,
+                    ),
                   ),
                 ),
+                if (_isLive)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF10B981),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Text(
+                      'LIVE',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 10,
+                      ),
+                    ),
+                  ),
               ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              _isLive
+                  ? 'Bagikan link permanen ini ke penonton untuk melihat posisi & mengirim pesan/suara:'
+                  : 'Bagikan link permanen ini ke teman/keluarga. Link tidak akan berubah di setiap sesi lari baru:',
+              style: TextStyle(
+                fontSize: 11,
+                color: isDark ? Colors.white70 : const Color(0xFF4B5563),
+              ),
             ),
             const SizedBox(height: 8),
             SelectableText(
-              '${api.baseUrl}/live/$_sessionToken',
+              '${api.baseUrl}/live/$liveSlug',
               style: TextStyle(
                 fontSize: 13,
                 color: isDark ? Colors.white : kInkDark,
@@ -1876,10 +1925,8 @@ class _TrackingHomeState extends State<TrackingHome> {
       body: ListView(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
         children: [
-          if (_isLive && _sessionToken != null) ...[
-            _buildShareLinkCard(),
-            const SizedBox(height: 14),
-          ],
+          _buildShareLinkCard(),
+          const SizedBox(height: 14),
           _buildViewersCard(),
           const SizedBox(height: 14),
           _buildCheersCard(),
@@ -1904,6 +1951,8 @@ class _TrackingHomeState extends State<TrackingHome> {
       body: ListView(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
         children: [
+          _buildRunnerProfileCard(),
+          const SizedBox(height: 16),
           _buildTitleEditorCard(),
           const SizedBox(height: 16),
           _buildGpxRouteCard(),
@@ -1914,6 +1963,152 @@ class _TrackingHomeState extends State<TrackingHome> {
         ],
       ),
     );
+  }
+
+  Widget _buildRunnerProfileCard() {
+    final isDark = WaymarkApp.of(context).isDark;
+    final liveSlug = _runnerId ?? _sessionToken;
+    return Card(
+      elevation: 0,
+      color: isDark ? const Color(0xFF1E293B) : Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: isDark ? const Color(0xFF334155) : const Color(0xFFE5E7EB),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.person, color: Color(0xFF10B981), size: 20),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Profil Pelari (Runner ID)',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: isDark ? Colors.white : kInkDark,
+                          fontSize: 15,
+                        ),
+                      ),
+                      Text(
+                        liveSlug ?? 'Memuat...',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF10B981),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.edit, size: 18),
+                  tooltip: 'Ubah Nama Pelari',
+                  onPressed: _showEditRunnerNameDialog,
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Nama:',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: isDark ? Colors.white60 : const Color(0xFF64748B),
+                          ),
+                        ),
+                        Text(
+                          _runnerName,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: isDark ? Colors.white : kInkDark,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  TextButton.icon(
+                    style: TextButton.styleFrom(
+                      foregroundColor: const Color(0xFF10B981),
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                    ),
+                    onPressed: _shareTrackingLink,
+                    icon: const Icon(Icons.share, size: 14),
+                    label: const Text('Bagikan Link', style: TextStyle(fontSize: 12)),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showEditRunnerNameDialog() async {
+    final controller = TextEditingController(text: _runnerName);
+    final newName = await showDialog<String>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('Ubah Nama Pelari'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            maxLength: 40,
+            decoration: const InputDecoration(
+              hintText: 'Nama Pelari (contoh: Aryan Waymark)',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Batal'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
+              child: const Text('Simpan'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (newName != null && newName.isNotEmpty && newName != _runnerName) {
+      setState(() => _runnerName = newName);
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('runner_name', newName);
+    }
   }
 
   Widget _buildGpxRouteCard() {

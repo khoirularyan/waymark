@@ -1,15 +1,28 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
+class StartSessionResult {
+  const StartSessionResult({
+    required this.shareToken,
+    this.runnerId,
+    this.publicUrl,
+  });
+
+  final String shareToken;
+  final String? runnerId;
+  final String? publicUrl;
+}
+
 class TrackingApi {
   TrackingApi(this.baseUrl);
 
   final String baseUrl;
 
-  /// Starts a new tracking session and returns the generated share token.
-  Future<String> start({
+  /// Starts a new tracking session and returns the session details.
+  Future<StartSessionResult> start({
     required String runnerName,
     required String eventName,
+    String? runnerId,
     Map<String, dynamic>? route,
   }) async {
     final uri = Uri.parse('$baseUrl/api/tracking/start');
@@ -17,6 +30,10 @@ class TrackingApi {
       'runnerName': runnerName,
       'eventName': eventName,
     };
+
+    if (runnerId != null && runnerId.isNotEmpty) {
+      payload['runnerId'] = runnerId;
+    }
 
     if (route != null) {
       payload['route'] = route;
@@ -35,7 +52,11 @@ class TrackingApi {
     }
 
     final data = jsonDecode(response.body) as Map<String, dynamic>;
-    return data['shareToken'] as String;
+    return StartSessionResult(
+      shareToken: data['shareToken'] as String,
+      runnerId: data['runnerId'] as String?,
+      publicUrl: data['publicUrl'] as String?,
+    );
   }
 
   /// Sends a GPS position fix to the tracking server.
