@@ -217,15 +217,46 @@ export function LiveTrackerView({ token, initialSession }: LiveTrackerViewProps)
 
   // Derive coordinates and stats
   const locations = session?.locations ?? [];
-  const latestLocation = locations.length > 0 ? locations[locations.length - 1] : null;
+
+  // Filter out low-accuracy cell tower / Wi-Fi drift points (e.g. accuracy > 40m)
+  // and anomalous teleportation spikes to keep the runner's path clean, smooth, and accurate.
+  const validLocations = useMemo(() => {
+    if (locations.length === 0) return [];
+    const accurate = locations.filter((loc) => !loc.accuracy || loc.accuracy <= 40);
+    // If all fixes had high uncertainty (e.g. initial indoor lock), fallback to raw locations
+    const base = accurate.length > 0 ? accurate : locations;
+
+    // Secondary filter: eliminate sharp teleport spikes (teleport out >100m then immediately teleport back)
+    if (base.length < 3) return base;
+    const smoothed: typeof base = [base[0]];
+    for (let i = 1; i < base.length - 1; i++) {
+      const prev = smoothed[smoothed.length - 1];
+      const curr = base[i];
+      const next = base[i + 1];
+
+      const dPrevCurr = distanceMeters(prev.longitude, prev.latitude, curr.longitude, curr.latitude);
+      const dCurrNext = distanceMeters(curr.longitude, curr.latitude, next.longitude, next.latitude);
+      const dPrevNext = distanceMeters(prev.longitude, prev.latitude, next.longitude, next.latitude);
+
+      // If current point jumps far away while prev and next are close together, it's a spike
+      if (dPrevCurr > 150 && dCurrNext > 150 && dPrevNext < 60) {
+        continue; // drop spike
+      }
+      smoothed.push(curr);
+    }
+    smoothed.push(base[base.length - 1]);
+    return smoothed;
+  }, [locations]);
+
+  const latestLocation = validLocations.length > 0 ? validLocations[validLocations.length - 1] : null;
 
   const currentPos: [number, number] | null = latestLocation
     ? [latestLocation.longitude, latestLocation.latitude]
     : null;
 
   const trackCoords: [number, number][] = useMemo(() => {
-    return locations.map((loc) => [loc.longitude, loc.latitude]);
-  }, [locations]);
+    return validLocations.map((loc) => [loc.longitude, loc.latitude]);
+  }, [validLocations]);
 
   let routeCoords: [number, number][] = [];
   if (session?.route?.routeGeojson?.geometry?.coordinates) {
