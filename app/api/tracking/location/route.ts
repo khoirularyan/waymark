@@ -52,7 +52,13 @@ export async function POST(request: Request) {
         );
       }
 
-      return NextResponse.json({ ok: true, syncedCount: parsedBatch.data.locations.length });
+      return NextResponse.json({
+        ok: true,
+        syncedCount: parsedBatch.data.locations.length,
+        activeViewerCount: session.activeViewerCount ?? 0,
+        viewers: session.viewers ?? [],
+        cheers: session.cheers ?? [],
+      });
     }
 
     const parsed = singleSchema.safeParse(body);
@@ -71,7 +77,12 @@ export async function POST(request: Request) {
       );
     }
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({
+      ok: true,
+      activeViewerCount: session.activeViewerCount ?? 0,
+      viewers: session.viewers ?? [],
+      cheers: session.cheers ?? [],
+    });
   } catch {
     return NextResponse.json(
       { error: "Malformed request payload" },

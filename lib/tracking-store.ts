@@ -288,6 +288,10 @@ export async function addLocation(
     }
   }
 
+  const viewers = getActiveViewers(token);
+  activeSession.viewers = viewers;
+  activeSession.activeViewerCount = viewers.filter((v) => v.isOnline).length;
+  activeSession.cheers = getCheers(token);
   return activeSession;
 }
 
@@ -341,6 +345,10 @@ export async function addLocations(
     }
   }
 
+  const viewers = getActiveViewers(token);
+  activeSession.viewers = viewers;
+  activeSession.activeViewerCount = viewers.filter((v) => v.isOnline).length;
+  activeSession.cheers = getCheers(token);
   return activeSession;
 }
 
