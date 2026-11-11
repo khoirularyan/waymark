@@ -5,6 +5,10 @@ export type Location = {
   longitude: number;
   accuracy: number;
   battery: number;
+  altitude?: number;
+  speed?: number;
+  heading?: number;
+  isSos?: boolean;
   recordedAt: string;
 };
 
@@ -22,6 +26,14 @@ export type Viewer = {
   isOnline: boolean;
 };
 
+export type Cheer = {
+  id: string;
+  senderName: string;
+  message?: string;
+  emoji?: string;
+  createdAt: string;
+};
+
 export type Session = {
   id?: string;
   shareToken: string;
@@ -34,6 +46,8 @@ export type Session = {
   route?: RouteData | null;
   viewers?: Viewer[];
   activeViewerCount?: number;
+  cheers?: Cheer[];
+  isSos?: boolean;
 };
 
 // Global singleton memory store for Next.js across route module boundaries
@@ -42,6 +56,9 @@ const inMemoryStore: Map<string, Session> =
 
 const inMemoryViewers: Map<string, Map<string, Viewer>> =
   (globalThis as any).__waymarkViewers ??= new Map<string, Map<string, Viewer>>();
+
+const inMemoryCheers: Map<string, Cheer[]> =
+  (globalThis as any).__waymarkCheers ??= new Map<string, Cheer[]>();
 
 export async function startSession(
   runnerName: string,
@@ -110,6 +127,7 @@ export async function getSession(token: string): Promise<Session | null> {
       const viewers = getActiveViewers(token);
       memorySession.viewers = viewers;
       memorySession.activeViewerCount = viewers.filter((v) => v.isOnline).length;
+      memorySession.cheers = getCheers(token);
     }
     return memorySession ?? null;
   }
@@ -126,6 +144,7 @@ export async function getSession(token: string): Promise<Session | null> {
         const viewers = getActiveViewers(token);
         memorySession.viewers = viewers;
         memorySession.activeViewerCount = viewers.filter((v) => v.isOnline).length;
+        memorySession.cheers = getCheers(token);
       }
       return memorySession ?? null;
     }
@@ -201,6 +220,8 @@ export async function getSession(token: string): Promise<Session | null> {
         : memorySession?.route ?? null,
       viewers,
       activeViewerCount: viewers.filter((v) => v.isOnline).length,
+      cheers: getCheers(token),
+      isSos: memorySession?.isSos ?? false,
     };
 
     inMemoryStore.set(token, session);
@@ -211,6 +232,7 @@ export async function getSession(token: string): Promise<Session | null> {
       const viewers = getActiveViewers(token);
       memorySession.viewers = viewers;
       memorySession.activeViewerCount = viewers.filter((v) => v.isOnline).length;
+      memorySession.cheers = getCheers(token);
     }
     return memorySession ?? null;
   }
@@ -231,9 +253,11 @@ export async function addLocation(
 
   // Avoid duplicate timestamps
   if (activeSession.locations.at(-1)?.recordedAt === location.recordedAt) {
+    if (location.isSos !== undefined) activeSession.isSos = location.isSos;
     return activeSession;
   }
 
+  if (location.isSos !== undefined) activeSession.isSos = location.isSos;
   activeSession.locations.push(location);
 
   const supabase = getSupabaseAdmin();
@@ -387,4 +411,48 @@ export async function registerViewer(
   const viewers = getActiveViewers(token);
   const activeCount = viewers.filter((v) => v.isOnline).length;
   return { ok: true, activeCount, viewers };
+}
+
+export function getCheers(token: string): Cheer[] {
+  return inMemoryCheers.get(token) ?? [];
+}
+
+export async function addCheer(
+  token: string,
+  cheerData: { senderName: string; message?: string; emoji?: string }
+): Promise<Cheer | null> {
+  const session = inMemoryStore.get(token);
+  if (!session) return null;
+
+  let cheerList = inMemoryCheers.get(token);
+  if (!cheerList) {
+    cheerList = [];
+    inMemoryCheers.set(token, cheerList);
+  }
+
+  const cheer: Cheer = {
+    id: "ch_" + Math.random().toString(36).substring(2, 9),
+    senderName: cheerData.senderName.trim() || "Penonton",
+    message: cheerData.message?.trim(),
+    emoji: cheerData.emoji || "👏",
+    createdAt: new Date().toISOString(),
+  };
+
+  cheerList.unshift(cheer);
+  if (cheerList.length > 50) {
+    cheerList.pop();
+  }
+
+  session.cheers = cheerList;
+  return cheer;
+}
+
+export async function setSos(
+  token: string,
+  isSos: boolean
+): Promise<boolean> {
+  const session = inMemoryStore.get(token);
+  if (!session) return false;
+  session.isSos = isSos;
+  return true;
 }

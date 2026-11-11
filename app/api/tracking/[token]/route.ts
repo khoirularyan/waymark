@@ -31,5 +31,7 @@ export async function GET(_: Request, { params }: RouteProps) {
     route: session.route ?? null,
     viewers: session.viewers ?? [],
     activeViewerCount: session.activeViewerCount ?? 0,
+    cheers: session.cheers ?? [],
+    isSos: session.isSos ?? false,
   });
 }

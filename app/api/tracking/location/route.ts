@@ -8,6 +8,10 @@ const schema = z.object({
   longitude: z.number().gte(-180).lte(180),
   accuracy: z.number().nonnegative(),
   battery: z.number().int().gte(0).lte(100),
+  altitude: z.number().optional(),
+  speed: z.number().optional(),
+  heading: z.number().optional(),
+  isSos: z.boolean().optional(),
   recordedAt: z.string().datetime(),
 });
 

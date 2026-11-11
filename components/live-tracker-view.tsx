@@ -1,25 +1,41 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
+  AlertTriangle,
+  BatteryCharging,
   BatteryMedium,
+  BatteryWarning,
   Clock3,
+  Copy,
+  ExternalLink,
   Eye,
   Footprints,
+  Gauge,
+  Mountain,
   Radio,
   Route,
+  Share2,
+  ShieldAlert,
   Signal,
-  TriangleAlert,
+  TrendingUp,
   Users,
 } from "lucide-react";
 import { Header } from "./brand";
 import { TrackingMap } from "./tracking-map";
+import { ElevationProfile } from "./elevation-profile";
+import { WeatherCard } from "./weather-card";
+import { CheerSection } from "./cheer-section";
 
 interface Location {
   latitude: number;
   longitude: number;
   accuracy: number;
   battery: number;
+  altitude?: number;
+  speed?: number;
+  heading?: number;
+  isSos?: boolean;
   recordedAt: string;
 }
 
@@ -37,6 +53,14 @@ interface Viewer {
   isOnline: boolean;
 }
 
+interface Cheer {
+  id: string;
+  senderName: string;
+  message?: string;
+  emoji?: string;
+  createdAt: string;
+}
+
 interface SessionData {
   runnerName: string;
   eventName: string;
@@ -48,11 +72,27 @@ interface SessionData {
   route?: RouteData | null;
   viewers?: Viewer[];
   activeViewerCount?: number;
+  cheers?: Cheer[];
+  isSos?: boolean;
 }
 
 interface LiveTrackerViewProps {
   token: string;
   initialSession: SessionData | null;
+}
+
+function distanceMeters(lon1: number, lat1: number, lon2: number, lat2: number): number {
+  const R = 6371000;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
 }
 
 export function LiveTrackerView({
@@ -65,6 +105,7 @@ export function LiveTrackerView({
   const [displayName, setDisplayName] = useState<string>("");
   const [isEditingName, setIsEditingName] = useState(false);
   const [nameInput, setNameInput] = useState("");
+  const [copiedCoords, setCopiedCoords] = useState(false);
 
   // Initialize spectator identity from localStorage
   useEffect(() => {
@@ -109,7 +150,6 @@ export function LiveTrackerView({
     localStorage.setItem("waymark_display_name", clean);
     setIsEditingName(false);
 
-    // Immediate heartbeat with the new display name
     fetch(`/api/tracking/${token}/viewer`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -117,7 +157,7 @@ export function LiveTrackerView({
     }).catch(() => {});
   };
 
-  // Real-time polling every 3 seconds for fresh GPS data & viewers
+  // Real-time polling every 3 seconds for fresh GPS data, cheers, & viewers
   useEffect(() => {
     let isMounted = true;
 
@@ -133,9 +173,7 @@ export function LiveTrackerView({
           }));
           setLastUpdateText(new Date().toLocaleTimeString());
         }
-      } catch (err) {
-        // Silently retry on next interval
-      }
+      } catch (_) {}
     };
 
     const interval = setInterval(fetchLatest, 3000);
@@ -169,7 +207,7 @@ export function LiveTrackerView({
     ][];
   }
 
-  // Extract actual recorded track coordinates (jalur yang sudah dilewati)
+  // Extract actual recorded track coordinates
   const trackCoords: [number, number][] = locations.map((loc) => [
     loc.longitude,
     loc.latitude,
@@ -180,39 +218,131 @@ export function LiveTrackerView({
     ? [latestLocation.longitude, latestLocation.latitude]
     : null;
 
-  const batteryStr = latestLocation ? `${latestLocation.battery}%` : "—";
+  // Off-Course Detection
+  const offCourseMeters = useMemo(() => {
+    if (!currentPos || routeCoords.length < 2) return 0;
+    let minD = Infinity;
+    // Step through route points
+    const step = Math.max(1, Math.floor(routeCoords.length / 500));
+    for (let i = 0; i < routeCoords.length; i += step) {
+      const d = distanceMeters(currentPos[0], currentPos[1], routeCoords[i][0], routeCoords[i][1]);
+      if (d < minD) minD = d;
+    }
+    return Math.round(minD);
+  }, [currentPos, routeCoords]);
 
-  const stats = [
-    {
-      icon: <Footprints size={20} />,
-      label: "Official route",
-      value: totalDistance,
-      note: elevationGain !== "—" ? `Elevation gain: ${elevationGain}` : "GPX distance",
-    },
-    {
-      icon: <Clock3 size={20} />,
-      label: "Session status",
-      value: isLive ? "LIVE TRACKING" : "STOPPED",
-      note: session?.startedAt
-        ? `Started ${new Date(session.startedAt).toLocaleTimeString()}`
-        : "Active session",
-    },
-    {
-      icon: <BatteryMedium size={20} />,
-      label: "Runner battery",
-      value: batteryStr,
-      note: latestLocation?.recordedAt
-        ? `Updated ${new Date(latestLocation.recordedAt).toLocaleTimeString()}`
-        : "Awaiting first GPS signal",
-    },
-  ];
+  const isOffCourse = offCourseMeters > 75;
+
+  // Inactivity detection: > 15 minutes without location update while live
+  const lastRecordedMs = latestLocation ? new Date(latestLocation.recordedAt).getTime() : 0;
+  const isInactive =
+    isLive && lastRecordedMs > 0 && Date.now() - lastRecordedMs > 15 * 60 * 1000;
+
+  // Battery calculations
+  const batteryLevel = latestLocation?.battery ?? 100;
+  const batteryColor =
+    batteryLevel <= 20
+      ? "text-rose-600 bg-rose-50 border-rose-200"
+      : batteryLevel <= 45
+      ? "text-amber-600 bg-amber-50 border-amber-200"
+      : "text-emerald-700 bg-emerald-50 border-emerald-200";
+
+  // Speed / Pace calculation
+  const speedMps = latestLocation?.speed ?? 0;
+  const speedKmh = speedMps * 3.6;
+  const paceStr = useMemo(() => {
+    if (speedKmh < 0.5) return "Diam / Istirahat";
+    const paceMinTotal = 60 / speedKmh;
+    const paceMin = Math.floor(paceMinTotal);
+    const paceSec = Math.round((paceMinTotal - paceMin) * 60);
+    return `${paceMin}'${paceSec.toString().padStart(2, "0")}" /km`;
+  }, [speedKmh]);
+
+  const handleCopyCoords = () => {
+    if (!currentPos) return;
+    navigator.clipboard.writeText(`${currentPos[1].toFixed(6)}, ${currentPos[0].toFixed(6)}`);
+    setCopiedCoords(true);
+    setTimeout(() => setCopiedCoords(false), 2000);
+  };
+
+  const isEmergencySos = session?.isSos || latestLocation?.isSos;
 
   return (
     <main className="min-h-screen bg-[#fbfbfa]">
       <Header action="Share tracking" />
 
-      <div className="mx-auto max-w-[1440px] px-5 py-7 sm:px-8">
-        <div className="mb-6 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+      {/* EMERGENCY SOS BANNER */}
+      {isEmergencySos && (
+        <div className="bg-rose-600 px-5 py-4 text-white shadow-lg animate-pulse">
+          <div className="mx-auto flex max-w-[1440px] flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white/20">
+                <ShieldAlert size={24} className="text-white" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold tracking-wide">
+                  🚨 PERINGATAN DARURAT (SOS AKTIF)
+                </h2>
+                <p className="text-xs text-rose-100">
+                  Pelari {runnerName} telah mengaktifkan sinyal bantuan darurat di jalur trail!
+                  {currentPos && ` Lokasi GPS: ${currentPos[1].toFixed(5)}, ${currentPos[0].toFixed(5)}`}
+                </p>
+              </div>
+            </div>
+
+            {currentPos && (
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleCopyCoords}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-white/20 px-3 py-1.5 text-xs font-semibold hover:bg-white/30 transition-colors"
+                >
+                  <Copy size={13} />
+                  <span>{copiedCoords ? "Tersalin!" : "Salin Koordinat"}</span>
+                </button>
+                <a
+                  href={`https://maps.google.com/?q=${currentPos[1]},${currentPos[0]}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3.5 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-50 shadow-sm transition-colors"
+                >
+                  <ExternalLink size={13} />
+                  <span>Buka di Google Maps</span>
+                </a>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* OFF-COURSE WARNING BANNER */}
+      {!isEmergencySos && isOffCourse && (
+        <div className="bg-amber-500 px-5 py-2.5 text-amber-950 font-medium text-xs border-b border-amber-600/20">
+          <div className="mx-auto flex max-w-[1440px] items-center gap-2">
+            <AlertTriangle size={16} className="text-amber-950 shrink-0" />
+            <span>
+              <strong>Perhatian:</strong> Pelari terdeteksi melenceng sejauh{" "}
+              <strong>~{offCourseMeters} meter</strong> dari rute resmi GPX. Pastikan pelari tetap berada di jalur yang benar.
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* INACTIVITY WARNING BANNER */}
+      {!isEmergencySos && isInactive && (
+        <div className="bg-sky-50 px-5 py-2.5 text-sky-900 font-medium text-xs border-b border-sky-200">
+          <div className="mx-auto flex max-w-[1440px] items-center gap-2">
+            <Clock3 size={16} className="text-sky-600 shrink-0" />
+            <span>
+              Pelari belum memperbarui koordinat selama lebih dari 15 menit (mungkin sedang berada di area tanpa sinyal atau sedang beristirahat).
+            </span>
+          </div>
+        </div>
+      )}
+
+      <div className="mx-auto max-w-[1440px] px-5 py-6 sm:px-8">
+        {/* HEADER SECTION */}
+        <div className="mb-6 flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
           <div>
             <div className="mb-3 flex flex-wrap items-center gap-2">
               <div
@@ -227,25 +357,39 @@ export function LiveTrackerView({
                     isLive ? "animate-pulse bg-[#22A06B]" : "bg-[#999]"
                   }`}
                 />
-                {isLive ? "LIVE" : "STOPPED"}
+                {isLive ? "LIVE TRACKING" : "STOPPED"}
               </div>
 
               <div className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800">
                 <Eye size={13} className="text-emerald-600" />
                 <span>{session?.activeViewerCount ?? 1} Penonton Aktif</span>
               </div>
+
+              {/* Runner Battery Badge */}
+              {latestLocation && (
+                <div
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold ${batteryColor}`}
+                >
+                  {batteryLevel <= 20 ? (
+                    <BatteryWarning size={14} />
+                  ) : (
+                    <BatteryMedium size={14} />
+                  )}
+                  <span>Baterai Pelari: {batteryLevel}%</span>
+                </div>
+              )}
             </div>
 
-            <h1 className="text-3xl font-semibold tracking-[-.045em] text-ink sm:text-4xl">
+            <h1 className="text-3xl font-semibold tracking-[-.045em] text-neutral-900 sm:text-4xl">
               {eventName}
             </h1>
-            <p className="mt-1 text-sm text-[#858585]">
-              {runnerName} · Private live trail tracking
+            <p className="mt-1 text-sm text-neutral-500">
+              {runnerName} · Pelacakan langsung rute gunung & trail
             </p>
 
             {/* Spectator Identity Bar */}
             <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-              <span className="text-[#777]">Anda memantau sebagai:</span>
+              <span className="text-neutral-500">Anda memantau sebagai:</span>
               {isEditingName ? (
                 <form
                   onSubmit={handleSaveName}
@@ -256,12 +400,12 @@ export function LiveTrackerView({
                     value={nameInput}
                     onChange={(e) => setNameInput(e.target.value)}
                     placeholder="Nama Anda..."
-                    className="h-7 w-36 rounded-md border border-neutral-300 px-2 text-xs text-ink focus:border-brand focus:outline-none"
+                    className="h-7 w-36 rounded-md border border-neutral-300 px-2 text-xs text-neutral-900 focus:border-emerald-600 focus:outline-none"
                     autoFocus
                   />
                   <button
                     type="submit"
-                    className="h-7 rounded-md bg-brand px-2.5 font-medium text-white hover:bg-brand/90"
+                    className="h-7 rounded-md bg-emerald-600 px-2.5 font-medium text-white hover:bg-emerald-700"
                   >
                     Simpan
                   </button>
@@ -277,44 +421,138 @@ export function LiveTrackerView({
                 <button
                   type="button"
                   onClick={() => setIsEditingName(true)}
-                  className="inline-flex items-center gap-1 rounded-md bg-white px-2 py-0.5 font-semibold text-ink border border-neutral-200 hover:border-brand shadow-xs transition-colors"
+                  className="inline-flex items-center gap-1.5 rounded-md bg-white px-2.5 py-1 font-semibold text-neutral-800 border border-neutral-200 hover:border-emerald-500 shadow-2xs transition-colors"
                   title="Klik untuk mengubah nama Anda agar pelari tahu siapa yang memantau"
                 >
                   <span>{displayName || "Tamu"}</span>
-                  <span className="text-[10px] text-brand font-normal">✎ Ubah</span>
+                  <span className="text-[10px] text-emerald-600 font-normal">✎ Ubah</span>
                 </button>
               )}
             </div>
           </div>
 
-          <div className="flex flex-col items-start gap-1 sm:items-end">
-            <p className="flex items-center gap-2 text-sm text-[#666]">
-              <Signal
-                size={16}
-                className={isLive ? "text-[#10B981]" : "text-[#999]"}
-              />
-              {currentPos
-                ? `GPS fix: ${currentPos[1].toFixed(5)}, ${currentPos[0].toFixed(5)}`
-                : "Waiting for GPS fix..."}
-            </p>
-            <p className="text-xs text-[#999]">Updated: {lastUpdateText}</p>
+          {/* Weather & GPS signal info */}
+          <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center lg:items-end">
+            {currentPos && (
+              <WeatherCard latitude={currentPos[1]} longitude={currentPos[0]} />
+            )}
+            <div className="flex flex-col items-start gap-0.5 sm:items-end">
+              <p className="flex items-center gap-1.5 text-xs text-neutral-600">
+                <Signal
+                  size={14}
+                  className={isLive ? "text-emerald-500" : "text-neutral-400"}
+                />
+                {currentPos
+                  ? `GPS: ${currentPos[1].toFixed(5)}, ${currentPos[0].toFixed(5)}`
+                  : "Menunggu sinyal GPS..."}
+              </p>
+              <p className="text-[11px] text-neutral-400">Pembaruan: {lastUpdateText}</p>
+            </div>
           </div>
         </div>
 
-        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <TrackingMap
-            routeCoordinates={routeCoords}
-            trackCoordinates={trackCoords}
-            currentPosition={currentPos}
-          />
+        {/* MAIN GRID */}
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+          <div className="space-y-6">
+            {/* Interactive Map */}
+            <TrackingMap
+              routeCoordinates={routeCoords}
+              trackCoordinates={trackCoords}
+              currentPosition={currentPos}
+            />
 
-          <aside className="space-y-3">
+            {/* Interactive Mountain Elevation Profile */}
+            {session?.route && (
+              <ElevationProfile
+                routeGeojson={session.route.routeGeojson}
+                totalDistance={session.route.totalDistance}
+                elevationGain={session.route.elevationGain}
+                currentPos={currentPos}
+                currentAltitude={latestLocation?.altitude ? Math.round(latestLocation.altitude) : undefined}
+              />
+            )}
+          </div>
+
+          {/* SIDEBAR */}
+          <aside className="space-y-4">
+            {/* Cheer Section */}
+            <CheerSection
+              token={token}
+              spectatorName={displayName}
+              cheers={session?.cheers ?? []}
+              onCheerSent={(newCheer) => {
+                setSession((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        cheers: [newCheer, ...(prev.cheers ?? [])],
+                      }
+                    : null
+                );
+              }}
+            />
+
+            {/* Live Runner Performance Card */}
+            <section className="rounded-2xl border border-neutral-200/80 bg-white p-5 shadow-xs">
+              <p className="text-xs font-semibold uppercase tracking-[.13em] text-neutral-400">
+                Statistik Pelari Real-Time
+              </p>
+
+              <div className="mt-4 grid grid-cols-2 gap-3">
+                <div className="rounded-xl bg-neutral-50 p-3 border border-neutral-100">
+                  <span className="flex items-center gap-1.5 text-xs text-neutral-500">
+                    <Gauge size={14} className="text-emerald-600" />
+                    Pace Saat Ini
+                  </span>
+                  <p className="mt-1 text-base font-bold text-neutral-900">
+                    {paceStr}
+                  </p>
+                  <p className="text-[11px] text-neutral-400">
+                    {speedKmh > 0.5 ? `${speedKmh.toFixed(1)} km/h` : "Tidak bergerak"}
+                  </p>
+                </div>
+
+                <div className="rounded-xl bg-neutral-50 p-3 border border-neutral-100">
+                  <span className="flex items-center gap-1.5 text-xs text-neutral-500">
+                    <Mountain size={14} className="text-emerald-600" />
+                    Ketinggian
+                  </span>
+                  <p className="mt-1 text-base font-bold text-neutral-900">
+                    {latestLocation?.altitude
+                      ? `${Math.round(latestLocation.altitude)} mdpl`
+                      : "—"}
+                  </p>
+                  <p className="text-[11px] text-neutral-400">di atas permukaan laut</p>
+                </div>
+              </div>
+
+              <div className="my-4 h-px bg-neutral-100" />
+
+              <div className="flex items-end justify-between">
+                <div>
+                  <p className="text-2xl font-bold tracking-tight text-neutral-900">
+                    {totalDistance}
+                  </p>
+                  <p className="text-xs text-neutral-500">Total panjang rute resmi</p>
+                </div>
+                <div className="grid size-10 place-items-center rounded-xl bg-emerald-50 text-emerald-700">
+                  <Route size={20} />
+                </div>
+              </div>
+
+              {elevationGain !== "—" && (
+                <p className="mt-2 text-xs text-neutral-500">
+                  Total tanjakan (D+): <strong className="text-neutral-900">+{elevationGain}</strong>
+                </p>
+              )}
+            </section>
+
             {/* Live Spectators Section */}
-            <section className="rounded-2xl border border-[#eaeaea] bg-white p-5 shadow-sm">
+            <section className="rounded-2xl border border-neutral-200/80 bg-white p-5 shadow-xs">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Users size={16} className="text-emerald-600" />
-                  <p className="text-xs font-semibold uppercase tracking-[.13em] text-[#858585]">
+                  <p className="text-xs font-semibold uppercase tracking-[.13em] text-neutral-500">
                     Penonton Live ({session?.activeViewerCount ?? 1})
                   </p>
                 </div>
@@ -334,7 +572,7 @@ export function LiveTrackerView({
                             v.isOnline ? "bg-emerald-500" : "bg-neutral-300"
                           }`}
                         />
-                        <span className="font-medium text-ink">
+                        <span className="font-medium text-neutral-800">
                           {v.displayName}
                         </span>
                         {v.visitorId === visitorId && (
@@ -356,67 +594,21 @@ export function LiveTrackerView({
               </div>
             </section>
 
-            <section className="rounded-2xl border border-[#eaeaea] bg-white p-5 shadow-sm">
-              <p className="text-xs font-semibold uppercase tracking-[.13em] text-[#858585]">
-                Live Status
+            {/* Live Streaming Info Card */}
+            <div className="rounded-xl border border-dashed border-neutral-300 bg-white p-4 text-xs text-neutral-500">
+              <p className="flex items-center gap-2 font-semibold text-neutral-800">
+                <Radio size={14} className="text-emerald-600" /> Waymark Live Engine
               </p>
-              <div className="mt-4 flex items-center justify-between">
-                <span className="text-sm text-[#666]">Current position</span>
-                <span
-                  className={`text-sm font-semibold ${
-                    currentPos ? "text-emerald-600" : "text-amber-600"
-                  }`}
-                >
-                  {currentPos ? "GPS Active" : "Waiting for GPS"}
-                </span>
-              </div>
-              <div className="my-4 h-px bg-[#eee]" />
-              <div className="flex items-end justify-between">
-                <div>
-                  <p className="text-3xl font-bold tracking-tight text-ink">
-                    {totalDistance}
-                  </p>
-                  <p className="text-xs text-[#858585]">total trail distance</p>
-                </div>
-                <div className="grid size-11 place-items-center rounded-xl bg-orange-50 text-brand">
-                  <Route size={24} />
-                </div>
-              </div>
-              {elevationGain !== "—" && (
-                <p className="mt-3 text-xs text-[#858585]">
-                  Elevation gain: <b className="text-ink">{elevationGain}</b>
-                </p>
-              )}
-            </section>
-
-            {stats.map((item) => (
-              <section
-                key={item.label}
-                className="flex items-start gap-3 rounded-xl border border-[#eaeaea] bg-white p-4 shadow-sm"
-              >
-                <span className="mt-0.5 text-brand">{item.icon}</span>
-                <div>
-                  <p className="text-xs text-[#858585]">{item.label}</p>
-                  <p className="mt-0.5 font-semibold text-ink">{item.value}</p>
-                  <p className="mt-0.5 text-xs text-[#858585]">{item.note}</p>
-                </div>
-              </section>
-            ))}
-
-            <div className="rounded-xl border border-dashed border-[#d8d8d8] bg-white p-4 text-xs text-[#858585]">
-              <p className="flex items-center gap-2 font-semibold text-ink">
-                <Radio size={14} className="text-brand" /> Live Streaming
-              </p>
-              <p className="mt-1 leading-relaxed">
-                Rute oranye menunjukkan rute resmi GPX. Garis hijau akan digambar
-                secara otomatis mengikuti jejak langkah runner secara realtime.
+              <p className="mt-1 leading-relaxed text-[11px]">
+                Garis oranye menandai rute resmi GPX. Garis hijau digambar otomatis
+                mengikuti pergerakan GPS aktual pelari. Sorakan & emoji dikirim secara langsung ke HP pelari.
               </p>
             </div>
           </aside>
         </div>
       </div>
 
-      <footer className="mx-auto max-w-[1440px] px-5 pb-7 pt-2 text-xs text-[#999] sm:px-8">
+      <footer className="mx-auto max-w-[1440px] px-5 pb-7 pt-4 text-xs text-neutral-400 sm:px-8">
         Waymark · Every journey, in sight.
       </footer>
     </main>
