@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'gpx_parser.dart';
+import 'notification_service.dart';
 import 'tracking_api.dart';
 
 const kBrandOrange = Color(0xFFE85D3F);
@@ -57,8 +58,8 @@ class _TrackingHomeState extends State<TrackingHome> {
     return kDefaultServerUrl;
   }
 
-  late String _serverUrl = _resolveApiUrl();
-  late TrackingApi api = TrackingApi(_serverUrl);
+  final String _serverUrl = _resolveApiUrl();
+  late final TrackingApi api = TrackingApi(_serverUrl);
 
   StreamSubscription<Position>? _positionSubscription;
   Timer? _pollingTimer;
@@ -94,6 +95,7 @@ class _TrackingHomeState extends State<TrackingHome> {
   int _trackingIntervalSeconds = 4;
   Position? _lastSentPosition;
   DateTime? _lastSentTime;
+  int _selectedTabIndex = 0;
 
   @override
   void initState() {
@@ -103,6 +105,10 @@ class _TrackingHomeState extends State<TrackingHome> {
 
   Future<void> _loadInitialState() async {
     try {
+      await NotificationService.instance.initialize();
+    } catch (_) {}
+
+    try {
       final battery = await Battery().batteryLevel;
       if (mounted) setState(() => _batteryLevel = battery);
     } catch (_) {
@@ -111,14 +117,6 @@ class _TrackingHomeState extends State<TrackingHome> {
 
     try {
       final prefs = await SharedPreferences.getInstance();
-      final savedUrl = prefs.getString('server_url');
-      if (savedUrl != null && savedUrl.isNotEmpty) {
-        setState(() {
-          _serverUrl = savedUrl;
-          api = TrackingApi(_serverUrl);
-        });
-      }
-
       final savedQueueJson = prefs.getString('offline_queue');
       if (savedQueueJson != null) {
         final List<dynamic> decoded = jsonDecode(savedQueueJson);
@@ -136,80 +134,6 @@ class _TrackingHomeState extends State<TrackingHome> {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('offline_queue', jsonEncode(_offlineQueue));
     } catch (_) {}
-  }
-
-  Future<void> _showServerSettings() async {
-    final controller = TextEditingController(text: _serverUrl);
-    final selected = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Server Endpoint'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Pilih server backend untuk tracking:',
-              style: TextStyle(fontSize: 13, color: Colors.black54),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: controller,
-              decoration: const InputDecoration(
-                labelText: 'API Base URL',
-                hintText: 'https://waymark-seven.vercel.app',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => controller.text = kDefaultServerUrl,
-                    child: const Text('Vercel (Live)'),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => controller.text = 'http://localhost:3000',
-                    child: const Text('Localhost'),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Batal'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-            child: const Text('Simpan'),
-          ),
-        ],
-      ),
-    );
-
-    if (selected != null && selected.isNotEmpty && selected != _serverUrl) {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('server_url', selected);
-      setState(() {
-        _serverUrl = selected;
-        api = TrackingApi(_serverUrl);
-      });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Server dialihkan ke: $_serverUrl'),
-            backgroundColor: const Color(0xFF168654),
-          ),
-        );
-      }
-    }
   }
 
   Future<void> _pickGpxFile() async {
@@ -319,6 +243,15 @@ class _TrackingHomeState extends State<TrackingHome> {
     for (final c in res.cheers) {
       if (!_seenCheerIds.contains(c.id)) {
         _seenCheerIds.add(c.id);
+
+        // 1. Trigger audio chime, vibration pattern, and Android system notification
+        NotificationService.instance.notifyCheer(
+          senderName: c.senderName,
+          message: c.message,
+          emoji: c.emoji,
+        );
+
+        // 2. In-app floating toast
         final text = c.message != null && c.message!.isNotEmpty
             ? '${c.emoji} "${c.message}" — dari ${c.senderName}'
             : '${c.emoji} Sorakan semangat dari ${c.senderName}!';
@@ -713,365 +646,883 @@ class _TrackingHomeState extends State<TrackingHome> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        title: Column(
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _selectedTabIndex,
+        onDestinationSelected: (index) => setState(() => _selectedTabIndex = index),
+        indicatorColor: kBrandOrange.withValues(alpha: 0.15),
+        destinations: [
+          const NavigationDestination(
+            icon: Icon(Icons.speed_rounded),
+            selectedIcon: Icon(Icons.speed_rounded, color: kBrandOrange),
+            label: 'Pelacakan',
+          ),
+          NavigationDestination(
+            icon: Badge(
+              label: Text('${_cheers.length}'),
+              isLabelVisible: _cheers.isNotEmpty,
+              child: const Icon(Icons.favorite_outline_rounded),
+            ),
+            selectedIcon: Badge(
+              label: Text('${_cheers.length}'),
+              isLabelVisible: _cheers.isNotEmpty,
+              child: const Icon(Icons.favorite_rounded, color: Color(0xFFDC2626)),
+            ),
+            label: 'Sorakan',
+          ),
+          const NavigationDestination(
+            icon: Icon(Icons.tune_rounded),
+            selectedIcon: Icon(Icons.tune_rounded, color: kBrandOrange),
+            label: 'Rute & Mode',
+          ),
+        ],
+      ),
+      body: IndexedStack(
+        index: _selectedTabIndex,
+        children: [
+          _buildLiveDashboardView(),
+          _buildCheersView(),
+          _buildRouteAndSettingsView(),
+        ],
+      ),
+    );
+  }
+
+  void _shareTrackingLink() {
+    if (_sessionToken == null) return;
+    final url = '${api.baseUrl}/live/$_sessionToken';
+    Clipboard.setData(ClipboardData(text: url));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Link live tracking berhasil disalin ke clipboard!'),
+        backgroundColor: Color(0xFF168654),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  Widget _buildShareLinkCard() {
+    if (!_isLive || _sessionToken == null) return const SizedBox.shrink();
+    return Card(
+      elevation: 0,
+      color: const Color(0xFFF0FDF4),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: const BorderSide(color: Color(0xFFBBF7D0)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'waymark',
-              style: TextStyle(
-                fontWeight: FontWeight.w700,
-                letterSpacing: -1,
+            const Row(
+              children: [
+                Icon(Icons.share, color: Color(0xFF16A34A), size: 18),
+                SizedBox(width: 8),
+                Text(
+                  'Link Live Tracking untuk Pemantau',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF15803D),
+                    fontSize: 14,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            SelectableText(
+              '${api.baseUrl}/live/$_sessionToken',
+              style: const TextStyle(
+                fontSize: 13,
                 color: kInkDark,
+                fontWeight: FontWeight.w600,
               ),
             ),
-            InkWell(
-              onTap: _showServerSettings,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFF16A34A),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              onPressed: _shareTrackingLink,
+              icon: const Icon(Icons.copy, size: 16),
+              label: const Text('Salin Link Live'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildServerUrlCard() {
+    return Card(
+      elevation: 0,
+      color: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: const BorderSide(color: Color(0xFFE5E7EB)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFECFDF5),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(
+                Icons.cloud_done_rounded,
+                color: Color(0xFF16A34A),
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(
-                    _serverUrl.contains('vercel') ? Icons.cloud_done : Icons.dns_outlined,
-                    size: 12,
-                    color: _serverUrl.contains('vercel') ? const Color(0xFF16A34A) : Colors.black54,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    _serverUrl.replaceAll('https://', '').replaceAll('http://', ''),
+                  const Text(
+                    'Cloud Sync (Vercel Live)',
                     style: TextStyle(
-                      fontSize: 11,
-                      color: _serverUrl.contains('vercel') ? const Color(0xFF16A34A) : Colors.black54,
-                      fontWeight: FontWeight.w500,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                      color: kInkDark,
                     ),
                   ),
-                  const Icon(Icons.arrow_drop_down, size: 14, color: Colors.black45),
+                  Text(
+                    _serverUrl,
+                    style: const TextStyle(fontSize: 11, color: Colors.black54),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: const Color(0xFFDCFCE7),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFBBF7D0)),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.check_circle_rounded, size: 12, color: Color(0xFF15803D)),
+                  SizedBox(width: 4),
+                  Text(
+                    'Default',
+                    style: TextStyle(
+                      color: Color(0xFF15803D),
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ],
               ),
             ),
           ],
         ),
-        actions: [
-          IconButton(
-            onPressed: _showServerSettings,
-            icon: const Icon(Icons.tune, size: 20, color: Colors.black87),
-            tooltip: 'Server Settings',
-          ),
-          if (_isLive)
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                  backgroundColor: _isSos
-                      ? const Color(0xFFDC2626)
-                      : const Color(0xFFFEF2F2),
-                  foregroundColor: _isSos
-                      ? Colors.white
-                      : const Color(0xFFDC2626),
-                  side: BorderSide(
-                    color: _isSos ? Colors.transparent : const Color(0xFFFCA5A5),
-                  ),
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  minimumSize: Size.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
+      ),
+    );
+  }
+
+  /// Tab 0: 100% Fit in screen / ZERO-SCROLL HUD
+  Widget _buildLiveDashboardView() {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        child: Column(
+          children: [
+            // 1. Top Header: Brand + Live Pill + Battery Mode + Battery %
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    const Text(
+                      'waymark',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -1,
+                        fontSize: 22,
+                        color: kInkDark,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _isLive
+                            ? const Color(0xFFE8F5E9)
+                            : const Color(0xFFEEEEEE),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 6,
+                            height: 6,
+                            decoration: BoxDecoration(
+                              color: _isLive
+                                  ? const Color(0xFF2E7D32)
+                                  : const Color(0xFF757575),
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            _isLive ? 'LIVE' : 'STANDBY',
+                            style: TextStyle(
+                              color: _isLive
+                                  ? const Color(0xFF2E7D32)
+                                  : const Color(0xFF616161),
+                              fontWeight: FontWeight.bold,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-                onPressed: _toggleSos,
-                icon: Icon(
-                  _isSos ? Icons.warning : Icons.emergency_outlined,
-                  size: 14,
+
+                Row(
+                  children: [
+                    // Battery Mode Pill
+                    InkWell(
+                      onTap: () {
+                        _setTrackingInterval(_trackingIntervalSeconds == 4 ? 30 : 4);
+                      },
+                      borderRadius: BorderRadius.circular(14),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _trackingIntervalSeconds > 10
+                              ? const Color(0xFFECFDF5)
+                              : const Color(0xFFEFF6FF),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: _trackingIntervalSeconds > 10
+                                ? const Color(0xFFA7F3D0)
+                                : const Color(0xFFBFDBFE),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              _trackingIntervalSeconds > 10
+                                  ? Icons.energy_savings_leaf
+                                  : Icons.flash_on,
+                              size: 12,
+                              color: _trackingIntervalSeconds > 10
+                                  ? const Color(0xFF059669)
+                                  : const Color(0xFF2563EB),
+                            ),
+                            const SizedBox(width: 3),
+                            Text(
+                              _trackingIntervalSeconds > 10
+                                  ? 'Eco 30s'
+                                  : 'Live 4s',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: _trackingIntervalSeconds > 10
+                                    ? const Color(0xFF059669)
+                                    : const Color(0xFF2563EB),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+
+                    // Battery Level Pill
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _batteryLevel <= 20
+                            ? const Color(0xFFFEE2E2)
+                            : const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            _batteryLevel <= 20
+                                ? Icons.battery_alert
+                                : Icons.battery_std,
+                            size: 13,
+                            color: _batteryLevel <= 20
+                                ? Colors.red
+                                : Colors.black54,
+                          ),
+                          const SizedBox(width: 3),
+                          Text(
+                            '$_batteryLevel%',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: _batteryLevel <= 20
+                                  ? Colors.red
+                                  : Colors.black87,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-                label: Text(
-                  _isSos ? 'SOS ON' : 'SOS',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 11,
-                  ),
-                ),
-              ),
+              ],
             ),
-          Padding(
-            padding: const EdgeInsets.only(right: 16),
-            child: Center(
-              child: Container(
+
+            const SizedBox(height: 10),
+
+            // 2. Alert Banner (SOS or Off-Course if active)
+            if (_isLive && _isSos)
+              Container(
+                margin: const EdgeInsets.only(bottom: 10),
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 4,
+                  horizontal: 12,
+                  vertical: 8,
                 ),
                 decoration: BoxDecoration(
-                  color: _isLive
-                      ? const Color(0xFFE8F5E9)
-                      : const Color(0xFFEEEEEE),
-                  borderRadius: BorderRadius.circular(20),
+                  color: const Color(0xFFDC2626),
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                child: Text(
-                  _isLive ? 'LIVE' : 'READY',
-                  style: TextStyle(
-                    color: _isLive
-                        ? const Color(0xFF2E7D32)
-                        : const Color(0xFF616161),
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 520),
-          child: ListView(
-            padding: const EdgeInsets.all(20),
-            children: [
-              const Text(
-                'Every journey,\nin sight.',
-                style: TextStyle(
-                  fontSize: 38,
-                  height: 1.0,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -1.5,
-                  color: kInkDark,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                _isLive
-                    ? 'Sharing your live trail position.'
-                    : 'Start a private live location session with your trail route.',
-                style: const TextStyle(color: Colors.black54, fontSize: 16),
-              ),
-              const SizedBox(height: 24),
-              if (_isLive && _isSos) ...[
-                Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFDC2626),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.emergency, color: Colors.white, size: 28),
-                      const SizedBox(width: 12),
-                      const Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'SINYAL DARURAT (SOS) AKTIF!',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 13,
-                              ),
-                            ),
-                            SizedBox(height: 2),
-                            Text(
-                              'Pemantau di web menerima peringatan alarm dan koordinat Anda.',
-                              style: TextStyle(color: Colors.white70, fontSize: 11),
-                            ),
-                          ],
+                child: Row(
+                  children: [
+                    const Icon(Icons.emergency, color: Colors.white, size: 20),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'SOS DARURAT AKTIF: Sinyal dikirim ke pemantau',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 11,
                         ),
                       ),
-                      FilledButton.tonal(
-                        style: FilledButton.styleFrom(
-                          backgroundColor: Colors.white,
-                          foregroundColor: const Color(0xFFDC2626),
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          minimumSize: Size.zero,
+                    ),
+                    TextButton(
+                      style: TextButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        foregroundColor: Colors.red,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 2,
                         ),
-                        onPressed: _toggleSos,
-                        child: const Text('Matikan', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                        minimumSize: Size.zero,
                       ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 14),
-              ],
-              if (_isLive && _routeProgress != null && _routeProgress!.isOffCourse) ...[
-                Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFFFBEB),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: const Color(0xFFFDE68A)),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.warning_amber_rounded, color: Color(0xFFD97706), size: 24),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Peringatan: Melenceng dari Rute GPX',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 13,
-                                color: Color(0xFF92400E),
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              'Posisi Anda terdeteksi melenceng ~${_routeProgress!.distanceFromRouteMeters.round()} meter dari rute resmi.',
-                              style: const TextStyle(fontSize: 11, color: Color(0xFFB45309)),
-                            ),
-                          ],
+                      onPressed: _toggleSos,
+                      child: const Text(
+                        'Matikan',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 14),
-              ],
-              if (_offlineQueue.isNotEmpty) ...[
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF1F5F9),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0xFFCBD5E1)),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.cloud_off, size: 18, color: Color(0xFF475569)),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          '📴 Mode Offline: ${_offlineQueue.length} titik tersimpan (akan dikirim saat kembali dapat sinyal).',
-                          style: const TextStyle(
-                            fontSize: 11,
-                            color: Color(0xFF334155),
-                            fontWeight: FontWeight.w500,
-                          ),
+              )
+            else if (_isLive &&
+                _routeProgress != null &&
+                _routeProgress!.isOffCourse)
+              Container(
+                margin: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFFBEB),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFFDE68A)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.warning_amber_rounded,
+                      color: Color(0xFFD97706),
+                      size: 18,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _routeProgress!.distanceFromRouteMeters > 1000
+                            ? 'Belum di jalur rute (~${(_routeProgress!.distanceFromRouteMeters / 1000).toStringAsFixed(1)} km ke rute)'
+                            : 'Melenceng ~${_routeProgress!.distanceFromRouteMeters.round()}m dari rute GPX',
+                        style: const TextStyle(
+                          color: Color(0xFF92400E),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 14),
-              ],
-              _buildStatusCard(),
-              const SizedBox(height: 14),
-              _buildMetricsRow(),
-              const SizedBox(height: 20),
-              _buildGpxRouteCard(),
-              const SizedBox(height: 14),
-              _buildBatteryModeSelector(),
-              const SizedBox(height: 20),
-              FilledButton.icon(
-                style: FilledButton.styleFrom(
-                  backgroundColor: _isLive
-                      ? const Color(0xFFDC4545)
-                      : kBrandOrange,
-                  minimumSize: const Size.fromHeight(56),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                ),
-                onPressed: _isLocating
-                    ? null
-                    : (_isLive ? _stopTracking : _startTracking),
-                icon: Icon(
-                  _isLive ? Icons.stop_rounded : Icons.navigation_rounded,
-                ),
-                label: Text(
-                  _isLocating
-                      ? 'ACQUIRING GPS...'
-                      : (_isLive ? 'STOP TRACKING' : 'START TRACKING'),
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                  ),
+                    ),
+                  ],
                 ),
               ),
-              if (_isLive && _sessionToken != null) ...[
-                const SizedBox(height: 18),
-                Card(
-                  elevation: 0,
-                  color: const Color(0xFFF0FDF4),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                    side: const BorderSide(color: Color(0xFFBBF7D0)),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+
+            // 3. Central HUD Running Metrics (Expanded to fill space nicely without scrolling!)
+            Expanded(
+              child: Column(
+                children: [
+                  // Row 1: PACE (Huge digits) & SPEED
+                  Expanded(
+                    flex: 4,
+                    child: Row(
                       children: [
-                        const Row(
-                          children: [
-                            Icon(Icons.share, color: Color(0xFF16A34A), size: 18),
-                            SizedBox(width: 8),
-                            Text(
-                              'Live Tracking Link (Spectators)',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: Color(0xFF15803D),
-                                fontSize: 14,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        SelectableText(
-                          '${api.baseUrl}/live/$_sessionToken',
-                          style: const TextStyle(
-                            fontSize: 13,
-                            color: kInkDark,
-                            fontWeight: FontWeight.w600,
+                        Expanded(
+                          child: _buildMetricTile(
+                            label: 'PACE',
+                            value: _currentPace,
+                            unit: '/km',
+                            icon: Icons.timer_outlined,
+                            isHero: true,
                           ),
                         ),
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            FilledButton.icon(
-                              style: FilledButton.styleFrom(
-                                backgroundColor: const Color(0xFF16A34A),
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 14,
-                                  vertical: 10,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                              ),
-                              onPressed: () {
-                                Clipboard.setData(
-                                  ClipboardData(
-                                    text: '${api.baseUrl}/live/$_sessionToken',
-                                  ),
-                                );
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('Link sesi lari berhasil disalin!'),
-                                    backgroundColor: Color(0xFF16A34A),
-                                  ),
-                                );
-                              },
-                              icon: const Icon(Icons.copy, size: 16),
-                              label: const Text('Salin Link Live'),
-                            ),
-                          ],
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _buildMetricTile(
+                            label: 'KECEPATAN',
+                            value: _currentSpeedKmh.toStringAsFixed(1),
+                            unit: 'km/jam',
+                            icon: Icons.speed,
+                            isHero: true,
+                          ),
                         ),
                       ],
                     ),
                   ),
+
+                  const SizedBox(height: 10),
+
+                  // Row 2: SISA JARAK & ELEVASI
+                  Expanded(
+                    flex: 3,
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: _buildMetricTile(
+                            label: _selectedRoute != null
+                                ? 'SISA JARAK'
+                                : 'TOTAL RUTE',
+                            value: _selectedRoute != null
+                                ? '${_routeProgress?.remainingDistanceKm ?? _selectedRoute!.totalDistanceKm}'
+                                : '—',
+                            unit: 'km',
+                            icon: Icons.straighten,
+                            subtext: _selectedRoute != null
+                                ? 'Rute: ${_selectedRoute!.totalDistanceKm} km'
+                                : null,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _buildMetricTile(
+                            label: 'KETINGGIAN',
+                            value: _currentAltitudeM != null
+                                ? '${_currentAltitudeM!.round()}'
+                                : '—',
+                            unit: 'mdpl',
+                            icon: Icons.terrain,
+                            subtext: _selectedRoute != null
+                                ? 'D+: +${_selectedRoute!.elevationGainMeters}m'
+                                : null,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 10),
+
+                  // Row 3: ROUTE COURSE & SPECTATOR SUMMARY TILE
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: const Color(0xFFE5E7EB)),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0x06000000),
+                          blurRadius: 8,
+                          offset: Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          _selectedRoute != null
+                              ? Icons.route
+                              : Icons.alt_route,
+                          color: _selectedRoute != null
+                              ? kBrandOrange
+                              : Colors.black38,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                _selectedRoute?.name ??
+                                    'Belum ada rute GPX dimuat',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                  color: kInkDark,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              Text(
+                                _selectedRoute != null
+                                    ? (_routeProgress?.isOffCourse == true
+                                        ? 'Status: Di luar lintasan rute'
+                                        : 'Status: Mengikuti jalur lintasan')
+                                    : (_lastCoords != null
+                                        ? 'GPS: $_lastCoords (${_lastUpdateTime ?? ""})'
+                                        : (_gpsReady
+                                            ? 'GPS Siap · Menunggu pergerakan'
+                                            : 'Buka tab "Rute" untuk memuat jalur gunung')),
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: _routeProgress?.isOffCourse == true
+                                      ? const Color(0xFFB45309)
+                                      : Colors.black54,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (_isLive)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF0FDF4),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.people,
+                                  size: 12,
+                                  color: Color(0xFF16A34A),
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  '$_activeViewerCount',
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFF16A34A),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 12),
+
+            // 4. Fixed Thumb-Friendly Bottom Action Buttons (Never scrolled off-screen!)
+            if (!_isLive)
+              SizedBox(
+                width: double.infinity,
+                height: 54,
+                child: FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: kBrandOrange,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    elevation: 2,
+                  ),
+                  onPressed: _isLocating ? null : _startTracking,
+                  icon: _isLocating
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.play_arrow_rounded, size: 28),
+                  label: Text(
+                    _isLocating ? 'MENGHUBUNGKAN...' : 'MULAI LIVE TRACKING',
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
                 ),
-                const SizedBox(height: 14),
-                _buildViewersCard(),
-                const SizedBox(height: 14),
-                _buildCheersCard(),
+              )
+            else
+              Row(
+                children: [
+                  // STOP BUTTON
+                  Expanded(
+                    flex: 5,
+                    child: SizedBox(
+                      height: 52,
+                      child: FilledButton.icon(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFF171717),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
+                        onPressed: _stopTracking,
+                        icon: const Icon(Icons.stop_rounded, size: 22),
+                        label: const Text(
+                          'HENTIKAN',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  // SOS BUTTON
+                  SizedBox(
+                    height: 52,
+                    child: FilledButton(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: _isSos
+                            ? Colors.black
+                            : const Color(0xFFDC2626),
+                        padding: const EdgeInsets.symmetric(horizontal: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      onPressed: _toggleSos,
+                      child: Row(
+                        children: [
+                          Icon(_isSos ? Icons.warning : Icons.emergency,
+                              size: 18),
+                          const SizedBox(width: 4),
+                          Text(
+                            _isSos ? 'SOS ON' : 'SOS',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  // SHARE BUTTON
+                  SizedBox(
+                    height: 52,
+                    width: 52,
+                    child: IconButton.filledTonal(
+                      style: IconButton.styleFrom(
+                        backgroundColor: const Color(0xFFF1F5F9),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      onPressed: _shareTrackingLink,
+                      icon: const Icon(
+                        Icons.share,
+                        size: 20,
+                        color: Color(0xFF0F172A),
+                      ),
+                      tooltip: 'Bagikan Link',
+                    ),
+                  ),
+                ],
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMetricTile({
+    required String label,
+    required String value,
+    String? unit,
+    required IconData icon,
+    String? subtext,
+    bool isHero = false,
+  }) {
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: isHero ? 16 : 14,
+        vertical: isHero ? 12 : 10,
+      ),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x06000000),
+            blurRadius: 10,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: isHero ? 16 : 14, color: kBrandOrange),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: isHero ? 11 : 10,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.8,
+                  color: const Color(0xFF64748B),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text(
+                value,
+                style: TextStyle(
+                  fontSize: isHero ? 32 : 24,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: -1,
+                  color: kInkDark,
+                  height: 1.1,
+                ),
+              ),
+              if (unit != null) ...[
+                const SizedBox(width: 4),
+                Text(
+                  unit,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF64748B),
+                  ),
+                ),
               ],
             ],
           ),
+          if (subtext != null) ...[
+            const SizedBox(height: 2),
+            Text(
+              subtext,
+              style: const TextStyle(
+                fontSize: 10,
+                color: Color(0xFF94A3B8),
+                fontWeight: FontWeight.w500,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// Tab 1: Sorakan & Penonton Full-page view
+  Widget _buildCheersView() {
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      appBar: AppBar(
+        title: const Text(
+          'Sorakan & Penonton',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
         ),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        automaticallyImplyLeading: false,
+      ),
+      body: ListView(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+        children: [
+          if (_isLive && _sessionToken != null) ...[
+            _buildShareLinkCard(),
+            const SizedBox(height: 14),
+          ],
+          _buildViewersCard(),
+          const SizedBox(height: 14),
+          _buildCheersCard(),
+        ],
+      ),
+    );
+  }
+
+  /// Tab 2: Rute GPX & Mode Daya Full-page view
+  Widget _buildRouteAndSettingsView() {
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      appBar: AppBar(
+        title: const Text(
+          'Rute & Pengaturan',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+        ),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        automaticallyImplyLeading: false,
+      ),
+      body: ListView(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+        children: [
+          _buildGpxRouteCard(),
+          const SizedBox(height: 16),
+          _buildBatteryModeSelector(),
+          const SizedBox(height: 16),
+          _buildServerUrlCard(),
+        ],
       ),
     );
   }
@@ -1253,116 +1704,6 @@ class _TrackingHomeState extends State<TrackingHome> {
     );
   }
 
-  Widget _buildStatusCard() {
-    return Card(
-      elevation: 0,
-      color: Colors.white,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: const BorderSide(color: Color(0xFFEAEAEA)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              _isLive ? 'Tracking active' : 'Tracking status',
-              style: const TextStyle(color: Colors.black54),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              _isLive ? 'Live location is shared' : 'Not tracking',
-              style: const TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.w700,
-                color: kInkDark,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              _lastCoords != null
-                  ? 'Current GPS: $_lastCoords ($_lastUpdateTime)'
-                  : (_lastUpdateTime == null
-                        ? 'Waiting for first location update'
-                        : 'Last update $_lastUpdateTime'),
-              style: TextStyle(
-                color: _lastCoords != null ? kBrandGreen : Colors.black54,
-                fontWeight: _lastCoords != null
-                    ? FontWeight.w600
-                    : FontWeight.normal,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildMetricsRow() {
-    return Column(
-      children: [
-        Row(
-          children: [
-            _buildMetricItem(
-              'GPS Sinyal',
-              _lastCoords != null
-                  ? 'Fix OK'
-                  : (_isLocating
-                        ? 'Locating...'
-                        : (_gpsReady ? 'Ready' : 'Waiting')),
-              subtext: _lastCoords,
-            ),
-            const SizedBox(width: 10),
-            _buildMetricItem(
-              'Penonton',
-              _isLive ? '$_activeViewerCount Online' : '—',
-              subtext: _viewers.isNotEmpty ? '${_viewers.length} terhubung' : null,
-              isHighlight: _activeViewerCount > 0,
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        Row(
-          children: [
-            _buildMetricItem(
-              'Pace Saat Ini',
-              _currentPace,
-              subtext: _currentSpeedKmh > 0.5 ? '${_currentSpeedKmh.toStringAsFixed(1)} km/h' : null,
-            ),
-            const SizedBox(width: 10),
-            _buildMetricItem(
-              'Ketinggian',
-              _currentAltitudeM != null ? '${_currentAltitudeM!.round()} mdpl' : '—',
-              subtext: 'Elevasi sekarang',
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        Row(
-          children: [
-            _buildMetricItem(
-              'Baterai HP',
-              _batteryLevel == 0 ? '—' : '$_batteryLevel%',
-              subtext: _batteryLevel <= 20 ? 'Perlu dicas!' : 'Normal',
-            ),
-            const SizedBox(width: 10),
-            _buildMetricItem(
-              _selectedRoute != null ? 'Sisa Jarak' : 'Koneksi',
-              _selectedRoute != null
-                  ? '${_routeProgress?.remainingDistanceKm ?? _selectedRoute!.totalDistanceKm} km'
-                  : 'Connected',
-              subtext: _selectedRoute != null
-                  ? 'Sisa D+: +${_routeProgress?.remainingElevationGainMeters ?? _selectedRoute!.elevationGainMeters}m'
-                  : null,
-              isHighlight: _selectedRoute != null,
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
   Widget _buildCheersCard() {
     if (!_isLive || _sessionToken == null) return const SizedBox.shrink();
 
@@ -1492,59 +1833,6 @@ class _TrackingHomeState extends State<TrackingHome> {
                     ],
                   );
                 },
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildMetricItem(
-    String label,
-    String value, {
-    String? subtext,
-    bool isHighlight = false,
-  }) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: isHighlight
-                ? const Color(0xFF10B981)
-                : const Color(0xFFEAEAEA),
-            width: isHighlight ? 1.5 : 1,
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              label,
-              style: const TextStyle(fontSize: 12, color: Colors.black54),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              value,
-              style: TextStyle(
-                fontWeight: FontWeight.w700,
-                color: isHighlight ? const Color(0xFF168654) : kInkDark,
-              ),
-            ),
-            if (subtext != null) ...[
-              const SizedBox(height: 2),
-              Text(
-                subtext,
-                style: const TextStyle(
-                  fontSize: 10,
-                  color: Color(0xFF168654),
-                  fontWeight: FontWeight.w500,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
               ),
             ],
           ],

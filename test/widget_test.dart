@@ -10,7 +10,14 @@ void main() {
 
     await tester.pumpWidget(const WaymarkApp());
     expect(find.text('waymark'), findsOneWidget);
-    expect(find.text('Every journey,\nin sight.'), findsOneWidget);
+    expect(find.text('Pelacakan'), findsOneWidget);
+    expect(find.text('Sorakan'), findsOneWidget);
+    expect(find.text('Rute & Mode'), findsOneWidget);
+    expect(find.text('MULAI LIVE TRACKING'), findsOneWidget);
+
+    // Tap on Rute & Mode tab
+    await tester.tap(find.text('Rute & Mode'));
+    await tester.pumpAndSettle();
     expect(find.text('Trail Route (GPX)'), findsOneWidget);
     expect(find.text('Pick GPX File'), findsOneWidget);
     expect(find.text('Sample GPX'), findsOneWidget);

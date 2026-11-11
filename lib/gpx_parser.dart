@@ -91,7 +91,20 @@ class GpxRoute {
     }
 
     final double distanceFromRouteMeters = minDistanceKm * 1000.0;
-    final bool isOffCourse = distanceFromRouteMeters > 75.0;
+    final bool isOffCourse = distanceFromRouteMeters > 150.0;
+
+    // If runner is far from the route (> 250 meters away, e.g. testing from home or outside the track),
+    // they are NOT actively running this course yet, so covered distance along route is 0!
+    if (distanceFromRouteMeters > 250.0) {
+      return RouteProgress(
+        closestIndex: 0,
+        distanceFromRouteMeters: distanceFromRouteMeters,
+        isOffCourse: true,
+        distanceCoveredKm: 0.0,
+        remainingDistanceKm: totalDistanceKm,
+        remainingElevationGainMeters: elevationGainMeters,
+      );
+    }
 
     double coveredKm = 0.0;
     for (int i = 0; i < closestIdx; i++) {
