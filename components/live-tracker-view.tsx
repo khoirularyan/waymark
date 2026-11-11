@@ -13,6 +13,7 @@ import {
   ExternalLink,
   Eye,
   Gauge,
+  Map as MapIcon,
   MapPin,
   Mountain,
   Moon,
@@ -317,7 +318,7 @@ export function LiveTrackerView({ token, initialSession }: LiveTrackerViewProps)
   const isEmergencySos = session?.isSos || latestLocation?.isSos;
 
   return (
-    <main className="h-screen h-[100dvh] w-screen overflow-hidden flex flex-col bg-[#fbfbfa] dark:bg-[#0b0f17] text-neutral-900 dark:text-neutral-100 select-none transition-colors">
+    <main className="fixed inset-0 w-full h-full overflow-hidden flex flex-col bg-[#fbfbfa] dark:bg-[#0b0f17] text-neutral-900 dark:text-neutral-100 select-none transition-colors">
       {/* 0. WELCOME / SPECTATOR NAME MODAL (Shown automatically on first visit) */}
       {showNameModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
@@ -355,15 +356,15 @@ export function LiveTrackerView({ token, initialSession }: LiveTrackerViewProps)
         </div>
       )}
 
-      {/* 1. TOP NAVBAR (Sleek, h-14, Zero page scroll) */}
-      <header className="h-14 shrink-0 bg-white/95 dark:bg-neutral-900/95 backdrop-blur-md border-b border-neutral-200/90 dark:border-neutral-800 px-4 sm:px-6 flex items-center justify-between z-30 shadow-xs transition-colors">
+      {/* 1. TOP NAVBAR (Sleek, h-13 on mobile / h-14 on desktop, Zero page scroll) */}
+      <header className="h-13 sm:h-14 shrink-0 bg-white/95 dark:bg-neutral-900/95 backdrop-blur-md border-b border-neutral-200/90 dark:border-neutral-800 px-3 sm:px-6 flex items-center justify-between z-30 shadow-xs transition-colors">
         {/* Left: Brand + Runner Info */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <Brand />
-          <div className="h-5 w-px bg-neutral-200 dark:bg-neutral-800 hidden sm:block" />
-          <div className="flex items-center gap-2">
+          <div className="h-4 w-px bg-neutral-200 dark:bg-neutral-800 hidden sm:block" />
+          <div className="flex items-center gap-1.5 sm:gap-2">
             <span
-              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-bold ${
+              className={`inline-flex items-center gap-1.5 rounded-full px-2 sm:px-2.5 py-0.5 text-[10px] sm:text-[11px] font-bold ${
                 isEmergencySos
                   ? "bg-rose-600 text-white animate-pulse"
                   : isLive
@@ -422,9 +423,9 @@ export function LiveTrackerView({ token, initialSession }: LiveTrackerViewProps)
         </div>
 
         {/* Right: Spectators + Share + Theme Toggle + Toggle Sidebar */}
-        <div className="flex items-center gap-2">
-          <div className="inline-flex items-center gap-1.5 rounded-full bg-neutral-100 dark:bg-neutral-800 px-2.5 py-1 text-xs font-medium text-neutral-700 dark:text-neutral-300">
-            <Eye size={13} className="text-emerald-600 dark:text-emerald-400" />
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          <div className="inline-flex items-center gap-1 rounded-full bg-neutral-100 dark:bg-neutral-800 px-2 sm:px-2.5 py-1 text-xs font-medium text-neutral-700 dark:text-neutral-300">
+            <Eye size={12} className="text-emerald-600 dark:text-emerald-400" />
             <span>{session?.activeViewerCount ?? 1}</span>
             <span className="hidden sm:inline text-neutral-400 dark:text-neutral-500">penonton</span>
           </div>
@@ -432,7 +433,7 @@ export function LiveTrackerView({ token, initialSession }: LiveTrackerViewProps)
           <button
             type="button"
             onClick={handleCopyLink}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 shadow-xs transition-colors"
+            className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 sm:px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 shadow-xs transition-colors"
           >
             <Share2 size={13} />
             <span className="hidden sm:inline">{copiedLink ? "Tersalin!" : "Bagikan"}</span>
@@ -512,58 +513,69 @@ export function LiveTrackerView({ token, initialSession }: LiveTrackerViewProps)
             className="relative h-full w-full overflow-hidden"
           />
 
-          {/* Floating Pill Switcher on Mobile (<lg) */}
-          <div className="lg:hidden absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 rounded-full bg-white/95 dark:bg-neutral-900/95 p-1 shadow-lg backdrop-blur-md border border-neutral-200/90 dark:border-neutral-800 text-xs font-semibold">
+          {/* Mobile Bottom Navigation Dock (Thumb-friendly, sleek glassmorphism, zero scroll) */}
+          <nav className="lg:hidden absolute bottom-3 inset-x-3 max-w-sm mx-auto z-20 flex items-center justify-around rounded-2xl bg-white/95 dark:bg-slate-900/95 p-1.5 shadow-2xl backdrop-blur-md border border-neutral-200/90 dark:border-slate-800 text-xs font-semibold">
             <button
+              type="button"
               onClick={() => setMobileSheet("none")}
-              className={`px-3 py-1.5 rounded-full transition-all ${
+              className={`flex-1 flex flex-col items-center justify-center py-1.5 px-2 rounded-xl transition-all ${
                 mobileSheet === "none"
-                  ? "bg-neutral-900 dark:bg-emerald-600 text-white shadow-xs"
-                  : "text-neutral-600 dark:text-neutral-400"
+                  ? "bg-emerald-600 text-white shadow-xs"
+                  : "text-neutral-600 dark:text-slate-400 hover:text-neutral-900 dark:hover:text-white"
               }`}
             >
-              🗺️ Peta
+              <MapIcon size={17} />
+              <span className="text-[10px] mt-0.5 font-bold">Peta</span>
             </button>
+
             {session?.route && (
               <button
-                onClick={() => setMobileSheet("elevation")}
-                className={`px-3 py-1.5 rounded-full transition-all ${
+                type="button"
+                onClick={() => setMobileSheet(mobileSheet === "elevation" ? "none" : "elevation")}
+                className={`flex-1 flex flex-col items-center justify-center py-1.5 px-2 rounded-xl transition-all ${
                   mobileSheet === "elevation"
-                    ? "bg-neutral-900 dark:bg-emerald-600 text-white shadow-xs"
-                    : "text-neutral-600 dark:text-neutral-400"
+                    ? "bg-emerald-600 text-white shadow-xs"
+                    : "text-neutral-600 dark:text-slate-400 hover:text-neutral-900 dark:hover:text-white"
                 }`}
               >
-                ⛰️ Elevasi
+                <Mountain size={17} />
+                <span className="text-[10px] mt-0.5 font-bold">Elevasi</span>
               </button>
             )}
+
             <button
-              onClick={() => setMobileSheet("cheers")}
-              className={`px-3 py-1.5 rounded-full transition-all ${
+              type="button"
+              onClick={() => setMobileSheet(mobileSheet === "cheers" ? "none" : "cheers")}
+              className={`flex-1 flex flex-col items-center justify-center py-1.5 px-2 rounded-xl relative transition-all ${
                 mobileSheet === "cheers"
-                  ? "bg-neutral-900 dark:bg-emerald-600 text-white shadow-xs"
-                  : "text-neutral-600 dark:text-neutral-400"
+                  ? "bg-emerald-600 text-white shadow-xs"
+                  : "text-neutral-600 dark:text-slate-400 hover:text-neutral-900 dark:hover:text-white"
               }`}
             >
-              🎉 ({session?.cheers?.length ?? 0})
+              <div className="relative">
+                <Sparkles size={17} />
+                {(session?.cheers?.length ?? 0) > 0 && (
+                  <span className="absolute -top-1 -right-2.5 bg-rose-500 text-white text-[9px] font-black px-1 rounded-full min-w-3.5 text-center leading-3">
+                    {session!.cheers!.length > 99 ? "99+" : session!.cheers!.length}
+                  </span>
+                )}
+              </div>
+              <span className="text-[10px] mt-0.5 font-bold">Sorakan</span>
             </button>
+
             <button
-              onClick={() => setMobileSheet("stats")}
-              className={`px-3 py-1.5 rounded-full transition-all ${
+              type="button"
+              onClick={() => setMobileSheet(mobileSheet === "stats" ? "none" : "stats")}
+              className={`flex-1 flex flex-col items-center justify-center py-1.5 px-2 rounded-xl transition-all ${
                 mobileSheet === "stats"
-                  ? "bg-neutral-900 dark:bg-emerald-600 text-white shadow-xs"
-                  : "text-neutral-600 dark:text-neutral-400"
+                  ? "bg-emerald-600 text-white shadow-xs"
+                  : "text-neutral-600 dark:text-slate-400 hover:text-neutral-900 dark:hover:text-white"
               }`}
             >
-              📊 Info
+              <Gauge size={17} />
+              <span className="text-[10px] mt-0.5 font-bold">Info</span>
             </button>
-            <button
-              onClick={toggleTheme}
-              className="px-2 py-1.5 text-neutral-600 dark:text-neutral-400 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-800"
-              title="Ganti Tema"
-            >
-              {isDark ? "☀️" : "🌙"}
-            </button>
-          </div>
+          </nav>
 
           {/* Desktop Floating Collapsible Elevation Profile Dock (Bottom of map) */}
           {session?.route && (
@@ -609,10 +621,19 @@ export function LiveTrackerView({ token, initialSession }: LiveTrackerViewProps)
 
           {/* Mobile Slide-Up Modal Sheets (Full Viewport, Zero page scroll) */}
           {mobileSheet !== "none" && (
-            <div className="lg:hidden absolute inset-0 bg-black/50 backdrop-blur-xs z-30 flex flex-col justify-end">
-              <div className="bg-white dark:bg-slate-900 rounded-t-3xl shadow-2xl max-h-[82vh] flex flex-col overflow-hidden animate-in slide-in-from-bottom-5 duration-200 border-t border-neutral-200 dark:border-slate-800">
+            <div
+              onClick={() => setMobileSheet("none")}
+              className="lg:hidden absolute inset-0 bg-black/60 backdrop-blur-xs z-40 flex flex-col justify-end"
+            >
+              <div
+                onClick={(e) => e.stopPropagation()}
+                className="bg-white dark:bg-slate-900 rounded-t-3xl shadow-2xl max-h-[75vh] flex flex-col overflow-hidden animate-in slide-in-from-bottom-5 duration-200 border-t border-neutral-200 dark:border-slate-800"
+              >
+                {/* Drag Handle Indicator */}
+                <div className="w-10 h-1 rounded-full bg-neutral-300 dark:bg-slate-700 mx-auto mt-2.5 mb-1 shrink-0" />
+
                 {/* Modal Header */}
-                <div className="flex items-center justify-between px-5 py-3.5 border-b border-neutral-100 dark:border-slate-800">
+                <div className="flex items-center justify-between px-5 py-2.5 border-b border-neutral-100 dark:border-slate-800 shrink-0">
                   <div className="flex items-center gap-2">
                     {mobileSheet === "elevation" && <Mountain size={18} className="text-emerald-600 dark:text-emerald-400" />}
                     {mobileSheet === "cheers" && <Sparkles size={18} className="text-emerald-600 dark:text-emerald-400" />}

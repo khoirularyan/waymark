@@ -346,8 +346,8 @@ export function TrackingMap({
       <div ref={container} className="absolute inset-0" />
 
       {/* Top Left Status Badge */}
-      <div className="absolute left-4 top-4 flex items-center gap-2 rounded-full border border-neutral-200/50 dark:border-slate-800 bg-white/95 dark:bg-slate-900/90 px-3.5 py-1.5 text-xs font-semibold shadow-xs backdrop-blur-xs transition-colors">
-        <span className="relative flex size-2.5">
+      <div className="absolute left-3 top-3 lg:left-4 lg:top-4 z-10 flex items-center gap-1.5 sm:gap-2 rounded-full border border-neutral-200/50 dark:border-slate-800 bg-white/95 dark:bg-slate-900/90 px-2.5 sm:px-3.5 py-1 sm:py-1.5 text-[11px] sm:text-xs font-semibold shadow-xs backdrop-blur-xs transition-colors">
+        <span className="relative flex size-2 sm:size-2.5">
           <span
             className={`absolute inline-flex size-full rounded-full ${
               isReplayMode
@@ -356,7 +356,7 @@ export function TrackingMap({
             }`}
           />
           <span
-            className={`relative inline-flex size-2.5 rounded-full ${
+            className={`relative inline-flex size-2 sm:size-2.5 rounded-full ${
               isReplayMode ? "bg-amber-500" : "bg-emerald-500"
             }`}
           />
@@ -365,19 +365,19 @@ export function TrackingMap({
           {isReplayMode
             ? `REPLAY • ${replayIndex + 1}/${trackCoordinates.length} Titik`
             : currentPosition
-            ? "GPS LIVE • Terhubung"
-            : "LIVE • Rute GPX Siap"}
+            ? "GPS LIVE"
+            : "LIVE"}
         </span>
       </div>
 
       {/* Top Right Controls: Map Layer Switcher & Replay Trigger */}
-      <div className="absolute right-4 top-4 flex items-center gap-2">
+      <div className="absolute right-3 top-3 lg:right-4 lg:top-4 z-10 flex items-center gap-1.5 sm:gap-2">
         {/* Layer Switcher Pill */}
-        <div className="flex overflow-hidden rounded-xl border border-neutral-200/90 dark:border-slate-800 bg-white/95 dark:bg-slate-900/90 p-0.5 shadow-xs backdrop-blur-xs text-xs font-medium transition-colors">
+        <div className="flex overflow-hidden rounded-xl border border-neutral-200/90 dark:border-slate-800 bg-white/95 dark:bg-slate-900/90 p-0.5 shadow-xs backdrop-blur-xs text-[11px] sm:text-xs font-medium transition-colors">
           <button
             type="button"
             onClick={() => setMapLayer("outdoor")}
-            className={`flex items-center gap-1 rounded-lg px-2.5 py-1 transition-colors ${
+            className={`flex items-center gap-1 rounded-lg px-2 sm:px-2.5 py-1 transition-colors ${
               mapLayer === "outdoor"
                 ? "bg-neutral-900 dark:bg-slate-800 text-white shadow-2xs"
                 : "text-neutral-600 dark:text-slate-400 hover:text-neutral-900 dark:hover:text-white"
@@ -389,7 +389,7 @@ export function TrackingMap({
           <button
             type="button"
             onClick={() => setMapLayer("satellite")}
-            className={`flex items-center gap-1 rounded-lg px-2.5 py-1 transition-colors ${
+            className={`flex items-center gap-1 rounded-lg px-2 sm:px-2.5 py-1 transition-colors ${
               mapLayer === "satellite"
                 ? "bg-emerald-600 text-white shadow-2xs"
                 : "text-neutral-600 dark:text-slate-400 hover:text-neutral-900 dark:hover:text-white"
@@ -404,7 +404,7 @@ export function TrackingMap({
           <button
             type="button"
             onClick={isReplayMode ? handleExitReplay : handleStartReplay}
-            className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold shadow-xs backdrop-blur-xs transition-colors ${
+            className={`flex items-center gap-1 rounded-xl border px-2.5 sm:px-3 py-1 sm:py-1.5 text-[11px] sm:text-xs font-semibold shadow-xs backdrop-blur-xs transition-colors ${
               isReplayMode
                 ? "border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/60 text-amber-900 dark:text-amber-300"
                 : "border-neutral-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900/90 text-neutral-800 dark:text-slate-200 hover:border-emerald-500"
@@ -413,12 +413,12 @@ export function TrackingMap({
             {isReplayMode ? (
               <>
                 <RotateCcw size={13} />
-                <span>Keluar Replay</span>
+                <span>Keluar</span>
               </>
             ) : (
               <>
                 <Play size={13} />
-                <span>Putar Ulang</span>
+                <span>Putar</span>
               </>
             )}
           </button>
@@ -485,7 +485,7 @@ export function TrackingMap({
       )}
 
       {/* Map Zoom & Locate Controls */}
-      <div className="absolute bottom-5 right-4 flex flex-col overflow-hidden rounded-xl border border-neutral-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs transition-colors">
+      <div className="absolute bottom-20 lg:bottom-5 right-3 lg:right-4 z-10 flex flex-col overflow-hidden rounded-xl border border-neutral-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-md transition-colors">
         <button
           onClick={() => map.current?.zoomIn()}
           aria-label="Zoom in"
@@ -511,7 +511,7 @@ export function TrackingMap({
       </div>
 
       {/* Color-Coded Map Legend */}
-      <div className="absolute bottom-5 left-4 flex flex-wrap items-center gap-3 rounded-xl border border-neutral-200/90 dark:border-slate-800 bg-white/95 dark:bg-slate-900/90 px-3.5 py-2 text-xs font-medium text-neutral-800 dark:text-slate-200 shadow-xs backdrop-blur-xs transition-colors">
+      <div className="absolute bottom-20 lg:bottom-5 left-3 lg:left-4 z-10 hidden sm:flex items-center gap-3 rounded-xl border border-neutral-200/90 dark:border-slate-800 bg-white/95 dark:bg-slate-900/90 px-3 py-1.5 text-xs font-medium text-neutral-800 dark:text-slate-200 shadow-xs backdrop-blur-xs transition-colors">
         <div className="flex items-center gap-1.5">
           <span className="inline-block h-1.5 w-5 rounded-full bg-[#FF6B00]" />
           <span>Rute GPX</span>

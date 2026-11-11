@@ -5,8 +5,24 @@
 
 :root { color: #171717; background: #fff; }
 * { box-sizing: border-box; }
-html { scroll-behavior: smooth; }
-body { margin: 0; background: #fff; color: #171717; font-family: Arial, Helvetica, sans-serif; }
+html {
+  scroll-behavior: smooth;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+body {
+  margin: 0;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+  background: #fff;
+  color: #171717;
+  font-family: Arial, Helvetica, sans-serif;
+  touch-action: pan-x pan-y;
+}
 html.dark, .dark body { background-color: #0b0f17; color: #f1f5f9; }
 .map-grid { background-color: #e6ebe7; background-image: linear-gradient(#ffffff75 1px, transparent 1px), linear-gradient(90deg, #ffffff75 1px, transparent 1px); background-size: 48px 48px; }
 .dark .map-grid { background-color: #0b0f17; background-image: linear-gradient(#1e293b75 1px, transparent 1px), linear-gradient(90deg, #1e293b75 1px, transparent 1px); }
