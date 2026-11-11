@@ -76,6 +76,30 @@ class TrackingApi {
     }
   }
 
+  /// Sends a batch of queued GPS fixes (Store & Forward offline sync).
+  Future<int> sendLocationBatch({
+    required String token,
+    required List<Map<String, dynamic>> locations,
+  }) async {
+    if (locations.isEmpty) return 0;
+    final uri = Uri.parse('$baseUrl/api/tracking/location');
+    final response = await http.post(
+      uri,
+      headers: {'content-type': 'application/json'},
+      body: jsonEncode({
+        'token': token,
+        'locations': locations,
+      }),
+    );
+
+    if (response.statusCode >= 300) {
+      throw Exception('Batch location update failed: ${response.statusCode}');
+    }
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    return data['syncedCount'] as int? ?? locations.length;
+  }
+
   /// Stops an active tracking session.
   Future<void> stop(String token) async {
     final uri = Uri.parse('$baseUrl/api/tracking/stop');

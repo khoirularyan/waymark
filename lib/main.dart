@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:battery_plus/battery_plus.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -84,6 +85,13 @@ class _TrackingHomeState extends State<TrackingHome> {
   double? _currentAltitudeM;
   String _currentPace = "—";
 
+  // Offline Store & Forward Queue
+  final List<Map<String, dynamic>> _offlineQueue = [];
+  bool _isFlushingQueue = false;
+
+  // Smart Battery Mode: 4 (Live Normal) vs 30 (Ultra Eco)
+  int _trackingIntervalSeconds = 4;
+
   @override
   void initState() {
     super.initState();
@@ -107,6 +115,23 @@ class _TrackingHomeState extends State<TrackingHome> {
           api = TrackingApi(_serverUrl);
         });
       }
+
+      final savedQueueJson = prefs.getString('offline_queue');
+      if (savedQueueJson != null) {
+        final List<dynamic> decoded = jsonDecode(savedQueueJson);
+        setState(() {
+          _offlineQueue.addAll(
+            decoded.map((item) => Map<String, dynamic>.from(item as Map)),
+          );
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _persistOfflineQueue() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('offline_queue', jsonEncode(_offlineQueue));
     } catch (_) {}
   }
 
@@ -307,34 +332,82 @@ class _TrackingHomeState extends State<TrackingHome> {
       );
     }
 
-    try {
-      await api.sendLocation(
-        token: _sessionToken!,
-        latitude: position.latitude,
-        longitude: position.longitude,
-        accuracy: position.accuracy,
-        battery: battery,
-        altitude: position.altitude,
-        speed: position.speed,
-        heading: position.heading,
-        isSos: _isSos,
-      );
+    final locData = <String, dynamic>{
+      'latitude': position.latitude,
+      'longitude': position.longitude,
+      'accuracy': position.accuracy,
+      'battery': battery,
+      'altitude': position.altitude,
+      'speed': position.speed,
+      'heading': position.heading,
+      'isSos': _isSos,
+      'recordedAt': DateTime.now().toUtc().toIso8601String(),
+    };
 
-      if (mounted) {
-        setState(() {
-          _gpsReady = true;
-          _isLocating = false;
-          _batteryLevel = battery;
-          _lastUpdateTime = TimeOfDay.now().format(context);
-          _lastCoords =
-              '${position.latitude.toStringAsFixed(4)}, ${position.longitude.toStringAsFixed(4)}';
-          _currentSpeedKmh = speedKmh;
-          _currentAltitudeM = position.altitude;
-          _currentPace = paceStr;
-          _routeProgress = progress;
-        });
+    if (_sessionToken != null) {
+      if (_offlineQueue.isNotEmpty && !_isFlushingQueue) {
+        _isFlushingQueue = true;
+        try {
+          final toSend = [..._offlineQueue, locData];
+          final synced = await api.sendLocationBatch(
+            token: _sessionToken!,
+            locations: toSend,
+          );
+          _offlineQueue.clear();
+          await _persistOfflineQueue();
+          if (mounted && toSend.length > 1) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'Sinyal pulih: $synced titik offline berhasil disinkronkan!',
+                ),
+                backgroundColor: const Color(0xFF168654),
+                duration: const Duration(seconds: 3),
+              ),
+            );
+          }
+        } catch (_) {
+          _offlineQueue.add(locData);
+          if (_offlineQueue.length > 500) _offlineQueue.removeAt(0);
+          await _persistOfflineQueue();
+        } finally {
+          _isFlushingQueue = false;
+        }
+      } else {
+        try {
+          await api.sendLocation(
+            token: _sessionToken!,
+            latitude: position.latitude,
+            longitude: position.longitude,
+            accuracy: position.accuracy,
+            battery: battery,
+            altitude: position.altitude,
+            speed: position.speed,
+            heading: position.heading,
+            isSos: _isSos,
+          );
+        } catch (_) {
+          _offlineQueue.add(locData);
+          if (_offlineQueue.length > 500) _offlineQueue.removeAt(0);
+          await _persistOfflineQueue();
+        }
       }
-    } catch (_) {}
+    }
+
+    if (mounted) {
+      setState(() {
+        _gpsReady = true;
+        _isLocating = false;
+        _batteryLevel = battery;
+        _lastUpdateTime = TimeOfDay.now().format(context);
+        _lastCoords =
+            '${position.latitude.toStringAsFixed(4)}, ${position.longitude.toStringAsFixed(4)}';
+        _currentSpeedKmh = speedKmh;
+        _currentAltitudeM = position.altitude;
+        _currentPace = paceStr;
+        _routeProgress = progress;
+      });
+    }
   }
 
   Future<void> _toggleSos() async {
@@ -410,6 +483,88 @@ class _TrackingHomeState extends State<TrackingHome> {
     }
   }
 
+  void _setTrackingInterval(int seconds) {
+    if (_trackingIntervalSeconds == seconds) return;
+    setState(() => _trackingIntervalSeconds = seconds);
+    if (_isLive && _sessionToken != null) {
+      _startTimersAndStream();
+      if (mounted) {
+        final modeName = seconds > 10 ? 'Ultra Eco (30s)' : 'Live Normal (4s)';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Mode tracking diubah ke: $modeName'),
+            backgroundColor: const Color(0xFF168654),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    }
+  }
+
+  void _startTimersAndStream() {
+    _positionSubscription?.cancel();
+    _pollingTimer?.cancel();
+
+    final settings = LocationSettings(
+      accuracy: _trackingIntervalSeconds > 10
+          ? LocationAccuracy.medium
+          : LocationAccuracy.high,
+      distanceFilter: _trackingIntervalSeconds > 10 ? 15 : 5,
+    );
+
+    _positionSubscription = Geolocator.getPositionStream(
+      locationSettings: settings,
+    ).listen((Position p) => _handleNewPosition(p));
+
+    _pollingTimer = Timer.periodic(
+      Duration(seconds: _trackingIntervalSeconds),
+      (_) async {
+        if (!_isLive || _sessionToken == null) return;
+        try {
+          final pos = await Geolocator.getCurrentPosition(
+            locationSettings: LocationSettings(
+              accuracy: _trackingIntervalSeconds > 10
+                  ? LocationAccuracy.medium
+                  : LocationAccuracy.high,
+              timeLimit: const Duration(seconds: 4),
+            ),
+          );
+          await _handleNewPosition(pos);
+        } catch (_) {}
+
+        // Poll spectators watching our session
+        try {
+          final viewers = await api.getViewers(_sessionToken!);
+          if (mounted) setState(() => _viewers = viewers);
+        } catch (_) {}
+
+        // Poll incoming cheers from spectators
+        try {
+          final cheers = await api.getCheers(_sessionToken!);
+          if (mounted) {
+            for (final c in cheers) {
+              if (!_seenCheerIds.contains(c.id)) {
+                _seenCheerIds.add(c.id);
+                final text = c.message != null && c.message!.isNotEmpty
+                    ? '${c.emoji} "${c.message}" — dari ${c.senderName}'
+                    : '${c.emoji} Sorakan semangat dari ${c.senderName}!';
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(text),
+                    backgroundColor: const Color(0xFF168654),
+                    duration: const Duration(seconds: 4),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              }
+            }
+            setState(() => _cheers = cheers);
+          }
+        } catch (_) {}
+      },
+    );
+  }
+
   Future<void> _startTracking() async {
     setState(() => _isLocating = true);
 
@@ -461,66 +616,8 @@ class _TrackingHomeState extends State<TrackingHome> {
         debugPrint('Initial GPS fetch error: $err');
       }
 
-      // 2. Start position change stream
-      const settings = LocationSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 5,
-      );
-
-      _positionSubscription = Geolocator.getPositionStream(
-        locationSettings: settings,
-      ).listen((Position p) => _handleNewPosition(p));
-
-      // 3. Start a periodic timer to guarantee regular updates & viewer polling
-      _pollingTimer?.cancel();
-      _pollingTimer = Timer.periodic(const Duration(seconds: 4), (_) async {
-        if (!_isLive || _sessionToken == null) return;
-        try {
-          final pos = await Geolocator.getCurrentPosition(
-            locationSettings: const LocationSettings(
-              accuracy: LocationAccuracy.high,
-              timeLimit: Duration(seconds: 4),
-            ),
-          );
-          await _handleNewPosition(pos);
-        } catch (_) {}
-
-        // Poll spectators watching our session
-        try {
-          final viewers = await api.getViewers(_sessionToken!);
-          if (mounted) {
-            setState(() {
-              _viewers = viewers;
-            });
-          }
-        } catch (_) {}
-
-        // Poll incoming cheers from spectators
-        try {
-          final cheers = await api.getCheers(_sessionToken!);
-          if (mounted) {
-            for (final c in cheers) {
-              if (!_seenCheerIds.contains(c.id)) {
-                _seenCheerIds.add(c.id);
-                final text = c.message != null && c.message!.isNotEmpty
-                    ? '${c.emoji} "${c.message}" — dari ${c.senderName}'
-                    : '${c.emoji} Sorakan semangat dari ${c.senderName}!';
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(text),
-                    backgroundColor: const Color(0xFF168654),
-                    duration: const Duration(seconds: 4),
-                    behavior: SnackBarBehavior.floating,
-                  ),
-                );
-              }
-            }
-            setState(() {
-              _cheers = cheers;
-            });
-          }
-        } catch (_) {}
-      });
+      // 2. Start position change stream & timer based on selected battery mode
+      _startTimersAndStream();
 
       // Initial viewers & cheers fetch
       try {
@@ -801,12 +898,41 @@ class _TrackingHomeState extends State<TrackingHome> {
                 ),
                 const SizedBox(height: 14),
               ],
+              if (_offlineQueue.isNotEmpty) ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFCBD5E1)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.cloud_off, size: 18, color: Color(0xFF475569)),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          '📴 Mode Offline: ${_offlineQueue.length} titik tersimpan (akan dikirim saat kembali dapat sinyal).',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Color(0xFF334155),
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+              ],
               _buildStatusCard(),
               const SizedBox(height: 14),
               _buildMetricsRow(),
               const SizedBox(height: 20),
               _buildGpxRouteCard(),
-              const SizedBox(height: 24),
+              const SizedBox(height: 14),
+              _buildBatteryModeSelector(),
+              const SizedBox(height: 20),
               FilledButton.icon(
                 style: FilledButton.styleFrom(
                   backgroundColor: _isLive
@@ -1570,6 +1696,66 @@ class _TrackingHomeState extends State<TrackingHome> {
             ],
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildBatteryModeSelector() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFEAEAEA)),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            _trackingIntervalSeconds > 10 ? Icons.battery_saver : Icons.bolt,
+            color: _trackingIntervalSeconds > 10
+                ? const Color(0xFF168654)
+                : const Color(0xFFFF6B00),
+            size: 20,
+          ),
+          const SizedBox(width: 8),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Mode Tracking & Baterai',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                    color: kInkDark,
+                  ),
+                ),
+                Text(
+                  'Atur interval GPS sesuai durasi lari',
+                  style: TextStyle(fontSize: 11, color: Colors.black54),
+                ),
+              ],
+            ),
+          ),
+          SegmentedButton<int>(
+            segments: const [
+              ButtonSegment(
+                value: 4,
+                label: Text('Normal (4s)', style: TextStyle(fontSize: 11)),
+              ),
+              ButtonSegment(
+                value: 30,
+                label: Text('Eco (30s)', style: TextStyle(fontSize: 11)),
+              ),
+            ],
+            selected: {_trackingIntervalSeconds},
+            onSelectionChanged: (set) => _setTrackingInterval(set.first),
+            style: const ButtonStyle(
+              visualDensity: VisualDensity.compact,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+          ),
+        ],
       ),
     );
   }
