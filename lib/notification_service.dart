@@ -32,11 +32,13 @@ class NotificationService {
     }
   }
 
-  /// Plays sound, vibrates phone, and posts a heads-up system notification for an incoming spectator cheer.
+  /// Plays sound, vibrates phone, and posts a heads-up system notification for an incoming spectator cheer or voice note.
   Future<void> notifyCheer({
     required String senderName,
     String? message,
     String emoji = '👏',
+    bool isVoiceNote = false,
+    int? durationSeconds,
   }) async {
     // 1. Hardware vibration and audio feedback
     try {
@@ -46,10 +48,14 @@ class NotificationService {
 
     // 2. Android system notification (works even when app is in background or screen is off)
     try {
-      final title = '$emoji Semangat dari $senderName!';
-      final body = (message != null && message.trim().isNotEmpty)
-          ? '"$message"'
-          : 'Memberikan sorakan semangat untuk lari Anda!';
+      final title = isVoiceNote
+          ? '🎙️ Pesan Suara dari $senderName!'
+          : '$emoji Semangat dari $senderName!';
+      final body = isVoiceNote
+          ? 'Pesan suara (${durationSeconds != null ? "$durationSeconds detik" : "baru"}) masuk. Ketuk untuk mendengarkan.'
+          : ((message != null && message.trim().isNotEmpty)
+              ? '"$message"'
+              : 'Memberikan sorakan semangat untuk lari Anda!');
 
       final androidDetails = AndroidNotificationDetails(
         'waymark_cheers_v2',

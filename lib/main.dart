@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:audioplayers/audioplayers.dart';
 import 'package:battery_plus/battery_plus.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart'
@@ -21,8 +22,42 @@ void main() {
   runApp(const WaymarkApp());
 }
 
-class WaymarkApp extends StatelessWidget {
+class WaymarkApp extends StatefulWidget {
   const WaymarkApp({super.key});
+
+  static WaymarkAppState of(BuildContext context) =>
+      context.findAncestorStateOfType<WaymarkAppState>()!;
+
+  @override
+  State<WaymarkApp> createState() => WaymarkAppState();
+}
+
+class WaymarkAppState extends State<WaymarkApp> {
+  ThemeMode _themeMode = ThemeMode.light;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTheme();
+  }
+
+  Future<void> _loadTheme() async {
+    final prefs = await SharedPreferences.getInstance();
+    final isDark = prefs.getBool('is_dark_mode') ?? false;
+    setState(() {
+      _themeMode = isDark ? ThemeMode.dark : ThemeMode.light;
+    });
+  }
+
+  Future<void> toggleTheme() async {
+    final next =
+        _themeMode == ThemeMode.light ? ThemeMode.dark : ThemeMode.light;
+    setState(() => _themeMode = next);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('is_dark_mode', next == ThemeMode.dark);
+  }
+
+  bool get isDark => _themeMode == ThemeMode.dark;
 
   @override
   Widget build(BuildContext context) {
@@ -31,12 +66,27 @@ class WaymarkApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
+        brightness: Brightness.light,
         scaffoldBackgroundColor: const Color(0xFFFBFBFA),
+        cardColor: Colors.white,
         colorScheme: ColorScheme.fromSeed(
           seedColor: kBrandOrange,
           primary: kBrandOrange,
+          brightness: Brightness.light,
         ),
       ),
+      darkTheme: ThemeData(
+        useMaterial3: true,
+        brightness: Brightness.dark,
+        scaffoldBackgroundColor: const Color(0xFF0F172A),
+        cardColor: const Color(0xFF1E293B),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: kBrandOrange,
+          primary: kBrandOrange,
+          brightness: Brightness.dark,
+        ),
+      ),
+      themeMode: _themeMode,
       home: const TrackingHome(),
     );
   }
@@ -63,6 +113,15 @@ class _TrackingHomeState extends State<TrackingHome> {
 
   StreamSubscription<Position>? _positionSubscription;
   Timer? _pollingTimer;
+  Timer? _interactionTimer;
+
+  // Audio player for incoming voice note cheers
+  final AudioPlayer _audioPlayer = AudioPlayer();
+  String? _playingCheerId;
+
+  // Custom session title (Runner can change to whatever they want)
+  late final TextEditingController _titleController =
+      TextEditingController(text: 'Latihan Lari');
 
   bool _isLive = false;
   bool _gpsReady = false;
@@ -103,6 +162,16 @@ class _TrackingHomeState extends State<TrackingHome> {
     _loadInitialState();
   }
 
+  @override
+  void dispose() {
+    _positionSubscription?.cancel();
+    _pollingTimer?.cancel();
+    _interactionTimer?.cancel();
+    _audioPlayer.dispose();
+    _titleController.dispose();
+    super.dispose();
+  }
+
   Future<void> _loadInitialState() async {
     try {
       await NotificationService.instance.initialize();
@@ -126,6 +195,28 @@ class _TrackingHomeState extends State<TrackingHome> {
           );
         });
       }
+
+      final savedCheersStr = prefs.getString('saved_cheers');
+      if (savedCheersStr != null) {
+        final List<dynamic> decoded = jsonDecode(savedCheersStr);
+        final loaded = decoded
+            .map((c) => CheerInfo.fromJson(Map<String, dynamic>.from(c as Map)))
+            .toList();
+        setState(() {
+          _cheers = loaded;
+          for (final c in loaded) {
+            _seenCheerIds.add(c.id);
+          }
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _persistCheers() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jsonList = _cheers.map((c) => c.toJson()).toList();
+      await prefs.setString('saved_cheers', jsonEncode(jsonList));
     } catch (_) {}
   }
 
@@ -240,34 +331,104 @@ class _TrackingHomeState extends State<TrackingHome> {
       _viewers = res.viewers;
     });
 
+    final Set<String> existingIds = _cheers.map((c) => c.id).toSet();
+    bool hasNew = false;
+
     for (final c in res.cheers) {
-      if (!_seenCheerIds.contains(c.id)) {
-        _seenCheerIds.add(c.id);
+      if (!existingIds.contains(c.id)) {
+        _cheers.insert(0, c);
+        existingIds.add(c.id);
+        hasNew = true;
 
-        // 1. Trigger audio chime, vibration pattern, and Android system notification
-        NotificationService.instance.notifyCheer(
-          senderName: c.senderName,
-          message: c.message,
-          emoji: c.emoji,
-        );
+        if (!_seenCheerIds.contains(c.id)) {
+          _seenCheerIds.add(c.id);
 
-        // 2. In-app floating toast
-        final text = c.message != null && c.message!.isNotEmpty
-            ? '${c.emoji} "${c.message}" — dari ${c.senderName}'
-            : '${c.emoji} Sorakan semangat dari ${c.senderName}!';
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(text),
-            backgroundColor: const Color(0xFF168654),
-            duration: const Duration(seconds: 4),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+          // 1. Trigger audio chime, vibration pattern, and Android system notification
+          NotificationService.instance.notifyCheer(
+            senderName: c.senderName,
+            message: c.message,
+            emoji: c.emoji,
+            isVoiceNote: c.isVoiceNote,
+            durationSeconds: c.durationSeconds,
+          );
+
+          // 2. In-app floating toast
+          final text = c.isVoiceNote
+              ? '🎙️ Pesan suara dari ${c.senderName} (${c.durationSeconds ?? 5}d)!'
+              : (c.message != null && c.message!.isNotEmpty
+                  ? '${c.emoji} "${c.message}" — dari ${c.senderName}'
+                  : '${c.emoji} Sorakan semangat dari ${c.senderName}!');
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(text),
+              backgroundColor: const Color(0xFF168654),
+              duration: const Duration(seconds: 4),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
       }
     }
-    setState(() {
-      _cheers = res.cheers;
+
+    if (hasNew) {
+      _persistCheers();
+    }
+    if (mounted) setState(() {});
+  }
+
+  void _startInteractionTimer() {
+    _interactionTimer?.cancel();
+    _interactionTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
+      if (!_isLive || _sessionToken == null) return;
+      try {
+        final res = await api.syncInteraction(_sessionToken!);
+        if (res != null) {
+          _applySyncResponse(res);
+        }
+      } catch (_) {}
     });
+  }
+
+  Future<void> _playVoiceNote(CheerInfo cheer) async {
+    if (cheer.audioData == null || cheer.audioData!.isEmpty) return;
+    if (_playingCheerId == cheer.id) {
+      await _audioPlayer.stop();
+      if (mounted) setState(() => _playingCheerId = null);
+      return;
+    }
+
+    try {
+      await _audioPlayer.stop();
+      if (mounted) setState(() => _playingCheerId = cheer.id);
+
+      String raw = cheer.audioData!;
+      if (raw.contains(',')) {
+        raw = raw.split(',').last;
+      }
+      final bytes = base64Decode(raw);
+
+      _audioPlayer.onPlayerComplete.listen((_) {
+        if (mounted) setState(() => _playingCheerId = null);
+      });
+
+      await _audioPlayer.play(BytesSource(bytes));
+    } catch (e) {
+      debugPrint('Error playing voice note: $e');
+      if (mounted) setState(() => _playingCheerId = null);
+    }
+  }
+
+  Future<void> _updateLiveTitle(String newTitle) async {
+    if (!_isLive || _sessionToken == null) return;
+    final success = await api.updateTitle(_sessionToken!, newTitle);
+    if (mounted && success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Judul tracking live berhasil diperbarui!'),
+          backgroundColor: Color(0xFF168654),
+        ),
+      );
+    }
   }
 
   Future<void> _handleNewPosition(Position position) async {
@@ -567,9 +728,12 @@ class _TrackingHomeState extends State<TrackingHome> {
             }
           : null;
 
+      final customTitle = _titleController.text.trim();
       _sessionToken = await api.start(
         runnerName: 'Waymark Runner',
-        eventName: _selectedRoute?.name ?? 'Outdoor session',
+        eventName: customTitle.isNotEmpty
+            ? customTitle
+            : (_selectedRoute?.name ?? 'Outdoor session'),
         route: routePayload,
       );
 
@@ -595,6 +759,9 @@ class _TrackingHomeState extends State<TrackingHome> {
 
       // 2. Start position change stream with foreground service & wakelock
       _startTimersAndStream();
+
+      // 3. Start high-frequency 2-second interaction timer for instant cheers and spectator count
+      _startInteractionTimer();
     } catch (e) {
       setState(() => _isLocating = false);
       if (mounted) {
@@ -610,6 +777,9 @@ class _TrackingHomeState extends State<TrackingHome> {
     _positionSubscription = null;
     _pollingTimer?.cancel();
     _pollingTimer = null;
+    _interactionTimer?.cancel();
+    _interactionTimer = null;
+    await _audioPlayer.stop();
     _lastSentPosition = null;
     _lastSentTime = null;
 
@@ -629,18 +799,10 @@ class _TrackingHomeState extends State<TrackingHome> {
         _isLocating = false;
         _isSos = false;
         _viewers = [];
-        _cheers = [];
-        _seenCheerIds.clear();
+        _playingCheerId = null;
         _routeProgress = null;
       });
     }
-  }
-
-  @override
-  void dispose() {
-    _positionSubscription?.cancel();
-    _pollingTimer?.cancel();
-    super.dispose();
   }
 
   @override
@@ -756,13 +918,133 @@ class _TrackingHomeState extends State<TrackingHome> {
     );
   }
 
-  Widget _buildServerUrlCard() {
+  Widget _buildTitleEditorCard() {
+    final isDark = WaymarkApp.of(context).isDark;
     return Card(
       elevation: 0,
-      color: Colors.white,
+      color: isDark ? const Color(0xFF1E293B) : Colors.white,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: const BorderSide(color: Color(0xFFE5E7EB)),
+        side: BorderSide(
+          color: isDark ? const Color(0xFF334155) : const Color(0xFFE5E7EB),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? const Color(0xFF1E3A8A)
+                        : const Color(0xFFEFF6FF),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(
+                    Icons.edit_note_rounded,
+                    color: Color(0xFF3B82F6),
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Judul Sesi Tracking',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                          color: isDark ? Colors.white : kInkDark,
+                        ),
+                      ),
+                      Text(
+                        'Kustomisasi judul tracking (tidak harus nama file GPX)',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: isDark ? Colors.white70 : Colors.black54,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _titleController,
+              style: TextStyle(color: isDark ? Colors.white : Colors.black87),
+              decoration: InputDecoration(
+                hintText: 'Contoh: Long Run Pagi / Bromo Ultra 2026',
+                hintStyle: TextStyle(
+                  color: isDark ? Colors.white38 : Colors.black38,
+                  fontSize: 13,
+                ),
+                filled: true,
+                fillColor: isDark
+                    ? const Color(0xFF0F172A)
+                    : const Color(0xFFF9FAFB),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 10,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(
+                    color: isDark
+                        ? const Color(0xFF334155)
+                        : const Color(0xFFE5E7EB),
+                  ),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(
+                    color: isDark
+                        ? const Color(0xFF334155)
+                        : const Color(0xFFE5E7EB),
+                  ),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: kBrandOrange),
+                ),
+                suffixIcon: _isLive && _sessionToken != null
+                    ? TextButton(
+                        onPressed: () =>
+                            _updateLiveTitle(_titleController.text.trim()),
+                        child: const Text(
+                          'Update',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 11,
+                            color: kBrandOrange,
+                          ),
+                        ),
+                      )
+                    : null,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildThemeSelectorCard() {
+    final isDark = WaymarkApp.of(context).isDark;
+    return Card(
+      elevation: 0,
+      color: isDark ? const Color(0xFF1E293B) : Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: isDark ? const Color(0xFF334155) : const Color(0xFFE5E7EB),
+        ),
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -771,12 +1053,14 @@ class _TrackingHomeState extends State<TrackingHome> {
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: const Color(0xFFECFDF5),
+                color: isDark
+                    ? const Color(0xFF334155)
+                    : const Color(0xFFFEF3C7),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: const Icon(
-                Icons.cloud_done_rounded,
-                color: Color(0xFF16A34A),
+              child: Icon(
+                isDark ? Icons.dark_mode_rounded : Icons.light_mode_rounded,
+                color: isDark ? Colors.amber : const Color(0xFFD97706),
                 size: 20,
               ),
             ),
@@ -785,45 +1069,30 @@ class _TrackingHomeState extends State<TrackingHome> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'Cloud Sync (Vercel Live)',
+                  Text(
+                    isDark ? 'Mode Gelap (Aktif)' : 'Mode Terang (Aktif)',
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
-                      fontSize: 13,
-                      color: kInkDark,
+                      fontSize: 14,
+                      color: isDark ? Colors.white : kInkDark,
                     ),
                   ),
                   Text(
-                    _serverUrl,
-                    style: const TextStyle(fontSize: 11, color: Colors.black54),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                    isDark
+                        ? 'Tema gelap nyaman di mata & hemat baterai'
+                        : 'Tema terang optimal untuk luar ruangan',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: isDark ? Colors.white70 : Colors.black54,
+                    ),
                   ),
                 ],
               ),
             ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              decoration: BoxDecoration(
-                color: const Color(0xFFDCFCE7),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFFBBF7D0)),
-              ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.check_circle_rounded, size: 12, color: Color(0xFF15803D)),
-                  SizedBox(width: 4),
-                  Text(
-                    'Default',
-                    style: TextStyle(
-                      color: Color(0xFF15803D),
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
+            Switch(
+              value: isDark,
+              activeThumbColor: kBrandOrange,
+              onChanged: (_) => WaymarkApp.of(context).toggleTheme(),
             ),
           ],
         ),
@@ -1517,11 +1786,13 @@ class _TrackingHomeState extends State<TrackingHome> {
       body: ListView(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
         children: [
+          _buildTitleEditorCard(),
+          const SizedBox(height: 16),
           _buildGpxRouteCard(),
           const SizedBox(height: 16),
           _buildBatteryModeSelector(),
           const SizedBox(height: 16),
-          _buildServerUrlCard(),
+          _buildThemeSelectorCard(),
         ],
       ),
     );
@@ -1705,14 +1976,48 @@ class _TrackingHomeState extends State<TrackingHome> {
   }
 
   Widget _buildCheersCard() {
-    if (!_isLive || _sessionToken == null) return const SizedBox.shrink();
+    final isDark = WaymarkApp.of(context).isDark;
+
+    if (!_isLive && _cheers.isEmpty) {
+      return Card(
+        elevation: 0,
+        color: isDark ? const Color(0xFF1E293B) : Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(
+            color: isDark ? const Color(0xFF334155) : const Color(0xFFEAEAEA),
+          ),
+        ),
+        child: const Padding(
+          padding: EdgeInsets.all(20),
+          child: Column(
+            children: [
+              Icon(Icons.favorite_border_rounded, size: 36, color: Colors.black26),
+              SizedBox(height: 10),
+              Text(
+                'Belum Ada Sorakan',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+              ),
+              SizedBox(height: 4),
+              Text(
+                'Mulai live tracking di tab Pelacakan untuk membagikan tautan dan menerima sorakan serta pesan suara langsung dari penonton!',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 12, color: Colors.black54),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
 
     return Card(
       elevation: 0,
-      color: Colors.white,
+      color: isDark ? const Color(0xFF1E293B) : Colors.white,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: const BorderSide(color: Color(0xFFEAEAEA)),
+        side: BorderSide(
+          color: isDark ? const Color(0xFF334155) : const Color(0xFFEAEAEA),
+        ),
       ),
       child: Padding(
         padding: const EdgeInsets.all(18),
@@ -1728,8 +2033,12 @@ class _TrackingHomeState extends State<TrackingHome> {
                       padding: const EdgeInsets.all(6),
                       decoration: BoxDecoration(
                         color: _cheers.isNotEmpty
-                            ? const Color(0xFFFFF1F2)
-                            : const Color(0xFFF5F5F5),
+                            ? (isDark
+                                ? const Color(0xFF881337)
+                                : const Color(0xFFFFF1F2))
+                            : (isDark
+                                ? const Color(0xFF334155)
+                                : const Color(0xFFF5F5F5)),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Icon(
@@ -1741,21 +2050,26 @@ class _TrackingHomeState extends State<TrackingHome> {
                       ),
                     ),
                     const SizedBox(width: 10),
-                    const Text(
+                    Text(
                       'Sorakan Penonton',
                       style: TextStyle(
                         fontWeight: FontWeight.w700,
                         fontSize: 15,
-                        color: kInkDark,
+                        color: isDark ? Colors.white : kInkDark,
                       ),
                     ),
                   ],
                 ),
                 if (_cheers.isNotEmpty)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFFFF1F2),
+                      color: isDark
+                          ? const Color(0xFF881337)
+                          : const Color(0xFFFFF1F2),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Text(
@@ -1774,16 +2088,22 @@ class _TrackingHomeState extends State<TrackingHome> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF9F9F9),
+                  color: isDark
+                      ? const Color(0xFF0F172A)
+                      : const Color(0xFFF9F9F9),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: const Row(
                   children: [
-                    Icon(Icons.chat_bubble_outline, size: 18, color: Colors.black45),
+                    Icon(
+                      Icons.chat_bubble_outline,
+                      size: 18,
+                      color: Colors.black45,
+                    ),
                     SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        'Belum ada sorakan. Penonton di web bisa mengirim emoji & pesan semangat yang langsung muncul di sini.',
+                        'Belum ada sorakan. Penonton di web bisa mengirim emoji, pesan semangat, & pesan suara.',
                         style: TextStyle(fontSize: 12, color: Colors.black54),
                       ),
                     ),
@@ -1794,9 +2114,13 @@ class _TrackingHomeState extends State<TrackingHome> {
               ListView.separated(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
-                itemCount: _cheers.take(5).length,
-                separatorBuilder: (context, index) =>
-                    const Divider(height: 16, color: Color(0xFFF0F0F0)),
+                itemCount: _cheers.length,
+                separatorBuilder: (context, index) => Divider(
+                  height: 16,
+                  color: isDark
+                      ? const Color(0xFF334155)
+                      : const Color(0xFFF0F0F0),
+                ),
                 itemBuilder: (context, index) {
                   final cheer = _cheers[index];
                   return Row(
@@ -1808,22 +2132,92 @@ class _TrackingHomeState extends State<TrackingHome> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              cheer.senderName,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 13,
-                                color: kInkDark,
-                              ),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  cheer.senderName,
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13,
+                                    color: isDark ? Colors.white : kInkDark,
+                                  ),
+                                ),
+                                if (cheer.createdAt.isNotEmpty)
+                                  Text(
+                                    _formatCheerTime(cheer.createdAt),
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: isDark
+                                          ? Colors.white38
+                                          : Colors.black38,
+                                    ),
+                                  ),
+                              ],
                             ),
-                            if (cheer.message != null && cheer.message!.isNotEmpty)
+                            if (cheer.isVoiceNote)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 6),
+                                child: InkWell(
+                                  onTap: () => _playVoiceNote(cheer),
+                                  borderRadius: BorderRadius.circular(10),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 6,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: isDark
+                                          ? const Color(0xFF064E3B)
+                                          : const Color(0xFFECFDF5),
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(
+                                        color: isDark
+                                            ? const Color(0xFF047857)
+                                            : const Color(0xFFBBF7D0),
+                                      ),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          _playingCheerId == cheer.id
+                                              ? Icons.stop_circle_rounded
+                                              : Icons.play_circle_fill_rounded,
+                                          color: isDark
+                                              ? const Color(0xFF34D399)
+                                              : const Color(0xFF16A34A),
+                                          size: 20,
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          _playingCheerId == cheer.id
+                                              ? 'Sedang Diputar...'
+                                              : 'Putar Pesan Suara (${cheer.durationSeconds ?? 5}d)',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.bold,
+                                            color: isDark
+                                                ? const Color(0xFF6EE7B7)
+                                                : const Color(0xFF15803D),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              )
+                            else if (cheer.message != null &&
+                                cheer.message!.isNotEmpty)
                               Padding(
                                 padding: const EdgeInsets.only(top: 2),
                                 child: Text(
                                   cheer.message!,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 12,
-                                    color: Colors.black87,
+                                    color: isDark
+                                        ? Colors.white70
+                                        : Colors.black87,
                                   ),
                                 ),
                               ),
@@ -1841,17 +2235,31 @@ class _TrackingHomeState extends State<TrackingHome> {
     );
   }
 
+  String _formatCheerTime(String isoString) {
+    try {
+      final dt = DateTime.parse(isoString).toLocal();
+      final h = dt.hour.toString().padLeft(2, '0');
+      final m = dt.minute.toString().padLeft(2, '0');
+      return '$h:$m';
+    } catch (_) {
+      return '';
+    }
+  }
+
   Widget _buildViewersCard() {
     if (!_isLive || _sessionToken == null) return const SizedBox.shrink();
 
+    final isDark = WaymarkApp.of(context).isDark;
     final activeCount = _activeViewerCount;
 
     return Card(
       elevation: 0,
-      color: Colors.white,
+      color: isDark ? const Color(0xFF1E293B) : Colors.white,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: const BorderSide(color: Color(0xFFEAEAEA)),
+        side: BorderSide(
+          color: isDark ? const Color(0xFF334155) : const Color(0xFFEAEAEA),
+        ),
       ),
       child: Padding(
         padding: const EdgeInsets.all(18),

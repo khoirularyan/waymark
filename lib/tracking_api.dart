@@ -156,6 +156,34 @@ class TrackingApi {
       return [];
     }
   }
+
+  /// Fast real-time interaction sync (Viewers & Cheers in <2 seconds)
+  Future<LocationSyncResponse?> syncInteraction(String token) async {
+    try {
+      final uri = Uri.parse('$baseUrl/api/tracking/$token');
+      final response = await http.get(uri);
+      if (response.statusCode != 200) return null;
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      return LocationSyncResponse.fromJson(data);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Updates live session event title on the fly
+  Future<bool> updateTitle(String token, String title) async {
+    try {
+      final uri = Uri.parse('$baseUrl/api/tracking/$token/title');
+      final response = await http.post(
+        uri,
+        headers: {'content-type': 'application/json'},
+        body: jsonEncode({'title': title}),
+      );
+      return response.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
 }
 
 class CheerInfo {
@@ -165,6 +193,8 @@ class CheerInfo {
     this.message,
     this.emoji = '👏',
     required this.createdAt,
+    this.audioData,
+    this.durationSeconds,
   });
 
   final String id;
@@ -172,6 +202,20 @@ class CheerInfo {
   final String? message;
   final String emoji;
   final String createdAt;
+  final String? audioData;
+  final int? durationSeconds;
+
+  bool get isVoiceNote => audioData != null && audioData!.isNotEmpty;
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'senderName': senderName,
+        'message': message,
+        'emoji': emoji,
+        'createdAt': createdAt,
+        'audioData': audioData,
+        'durationSeconds': durationSeconds,
+      };
 
   factory CheerInfo.fromJson(Map<String, dynamic> json) {
     return CheerInfo(
@@ -180,6 +224,8 @@ class CheerInfo {
       message: json['message'] as String?,
       emoji: json['emoji'] as String? ?? '👏',
       createdAt: json['createdAt'] as String? ?? '',
+      audioData: json['audioData'] as String?,
+      durationSeconds: json['durationSeconds'] as int?,
     );
   }
 }
