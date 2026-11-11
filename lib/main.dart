@@ -2,7 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:battery_plus/battery_plus.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart'
+    show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
@@ -91,6 +92,8 @@ class _TrackingHomeState extends State<TrackingHome> {
 
   // Smart Battery Mode: 4 (Live Normal) vs 30 (Ultra Eco)
   int _trackingIntervalSeconds = 4;
+  Position? _lastSentPosition;
+  DateTime? _lastSentTime;
 
   @override
   void initState() {
@@ -307,6 +310,33 @@ class _TrackingHomeState extends State<TrackingHome> {
     }
   }
 
+  void _applySyncResponse(LocationSyncResponse res) {
+    if (!mounted) return;
+    setState(() {
+      _viewers = res.viewers;
+    });
+
+    for (final c in res.cheers) {
+      if (!_seenCheerIds.contains(c.id)) {
+        _seenCheerIds.add(c.id);
+        final text = c.message != null && c.message!.isNotEmpty
+            ? '${c.emoji} "${c.message}" — dari ${c.senderName}'
+            : '${c.emoji} Sorakan semangat dari ${c.senderName}!';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(text),
+            backgroundColor: const Color(0xFF168654),
+            duration: const Duration(seconds: 4),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+    setState(() {
+      _cheers = res.cheers;
+    });
+  }
+
   Future<void> _handleNewPosition(Position position) async {
     int battery = _batteryLevel;
     try {
@@ -332,68 +362,6 @@ class _TrackingHomeState extends State<TrackingHome> {
       );
     }
 
-    final locData = <String, dynamic>{
-      'latitude': position.latitude,
-      'longitude': position.longitude,
-      'accuracy': position.accuracy,
-      'battery': battery,
-      'altitude': position.altitude,
-      'speed': position.speed,
-      'heading': position.heading,
-      'isSos': _isSos,
-      'recordedAt': DateTime.now().toUtc().toIso8601String(),
-    };
-
-    if (_sessionToken != null) {
-      if (_offlineQueue.isNotEmpty && !_isFlushingQueue) {
-        _isFlushingQueue = true;
-        try {
-          final toSend = [..._offlineQueue, locData];
-          final synced = await api.sendLocationBatch(
-            token: _sessionToken!,
-            locations: toSend,
-          );
-          _offlineQueue.clear();
-          await _persistOfflineQueue();
-          if (mounted && toSend.length > 1) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  'Sinyal pulih: $synced titik offline berhasil disinkronkan!',
-                ),
-                backgroundColor: const Color(0xFF168654),
-                duration: const Duration(seconds: 3),
-              ),
-            );
-          }
-        } catch (_) {
-          _offlineQueue.add(locData);
-          if (_offlineQueue.length > 500) _offlineQueue.removeAt(0);
-          await _persistOfflineQueue();
-        } finally {
-          _isFlushingQueue = false;
-        }
-      } else {
-        try {
-          await api.sendLocation(
-            token: _sessionToken!,
-            latitude: position.latitude,
-            longitude: position.longitude,
-            accuracy: position.accuracy,
-            battery: battery,
-            altitude: position.altitude,
-            speed: position.speed,
-            heading: position.heading,
-            isSos: _isSos,
-          );
-        } catch (_) {
-          _offlineQueue.add(locData);
-          if (_offlineQueue.length > 500) _offlineQueue.removeAt(0);
-          await _persistOfflineQueue();
-        }
-      }
-    }
-
     if (mounted) {
       setState(() {
         _gpsReady = true;
@@ -407,6 +375,95 @@ class _TrackingHomeState extends State<TrackingHome> {
         _currentPace = paceStr;
         _routeProgress = progress;
       });
+    }
+
+    if (_sessionToken == null) return;
+
+    // Smart Battery Throttle:
+    // When stationary (<3m displacement) and not in SOS mode, avoid continuous cellular radio wakeups.
+    // Instead, rely on periodic heartbeat (30s normal / 60s ultra eco).
+    final now = DateTime.now();
+    if (_lastSentPosition != null && _lastSentTime != null && !_isSos) {
+      final distMeters = Geolocator.distanceBetween(
+        _lastSentPosition!.latitude,
+        _lastSentPosition!.longitude,
+        position.latitude,
+        position.longitude,
+      );
+      final elapsedSec = now.difference(_lastSentTime!).inSeconds;
+      final heartbeatInterval = _trackingIntervalSeconds > 10 ? 60 : 30;
+      if (distMeters < 3.0 && elapsedSec < heartbeatInterval) {
+        return;
+      }
+    }
+
+    _lastSentPosition = position;
+    _lastSentTime = now;
+
+    final locData = <String, dynamic>{
+      'latitude': position.latitude,
+      'longitude': position.longitude,
+      'accuracy': position.accuracy,
+      'battery': battery,
+      'altitude': position.altitude,
+      'speed': position.speed,
+      'heading': position.heading,
+      'isSos': _isSos,
+      'recordedAt': now.toUtc().toIso8601String(),
+    };
+
+    if (_offlineQueue.isNotEmpty && !_isFlushingQueue) {
+      _isFlushingQueue = true;
+      try {
+        final toSend = [..._offlineQueue, locData];
+        final syncResult = await api.sendLocationBatch(
+          token: _sessionToken!,
+          locations: toSend,
+        );
+        _offlineQueue.clear();
+        await _persistOfflineQueue();
+        if (syncResult != null) {
+          _applySyncResponse(syncResult);
+        }
+        if (mounted && toSend.length > 1) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Sinyal pulih: ${syncResult?.syncedCount ?? toSend.length} titik offline berhasil disinkronkan!',
+              ),
+              backgroundColor: const Color(0xFF168654),
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
+      } catch (_) {
+        _offlineQueue.add(locData);
+        if (_offlineQueue.length > 500) _offlineQueue.removeAt(0);
+        await _persistOfflineQueue();
+      } finally {
+        _isFlushingQueue = false;
+      }
+    } else {
+      try {
+        final syncResult = await api.sendLocation(
+          token: _sessionToken!,
+          latitude: position.latitude,
+          longitude: position.longitude,
+          accuracy: position.accuracy,
+          battery: battery,
+          altitude: position.altitude,
+          speed: position.speed,
+          heading: position.heading,
+          isSos: _isSos,
+        );
+        if (syncResult != null) {
+          _applySyncResponse(syncResult);
+        }
+      } catch (_) {
+        _offlineQueue.add(locData);
+        if (_offlineQueue.length > 500) _offlineQueue.removeAt(0);
+        await _persistOfflineQueue();
+      }
     }
   }
 
@@ -505,62 +562,49 @@ class _TrackingHomeState extends State<TrackingHome> {
     _positionSubscription?.cancel();
     _pollingTimer?.cancel();
 
-    final settings = LocationSettings(
-      accuracy: _trackingIntervalSeconds > 10
-          ? LocationAccuracy.medium
-          : LocationAccuracy.high,
-      distanceFilter: _trackingIntervalSeconds > 10 ? 15 : 5,
-    );
+    LocationSettings settings;
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      settings = AndroidSettings(
+        accuracy: _trackingIntervalSeconds > 10
+            ? LocationAccuracy.medium
+            : LocationAccuracy.high,
+        distanceFilter: _trackingIntervalSeconds > 10 ? 15 : 5,
+        intervalDuration: Duration(seconds: _trackingIntervalSeconds),
+        foregroundNotificationConfig: const ForegroundNotificationConfig(
+          notificationTitle: 'Waymark Live Tracking Aktif',
+          notificationText: 'Pelacakan lari sedang aktif di latar belakang',
+          notificationChannelName: 'Waymark Live Tracking',
+          enableWakeLock: true,
+          setOngoing: true,
+        ),
+      );
+    } else {
+      settings = LocationSettings(
+        accuracy: _trackingIntervalSeconds > 10
+            ? LocationAccuracy.medium
+            : LocationAccuracy.high,
+        distanceFilter: _trackingIntervalSeconds > 10 ? 15 : 5,
+      );
+    }
 
     _positionSubscription = Geolocator.getPositionStream(
       locationSettings: settings,
     ).listen((Position p) => _handleNewPosition(p));
 
+    // Fallback heartbeat for stationary periods (e.g. resting at aid station or paused)
+    // Runs every 30s (normal) or 60s (ultra eco) only if no location fix was sent in that window.
     _pollingTimer = Timer.periodic(
-      Duration(seconds: _trackingIntervalSeconds),
+      Duration(seconds: _trackingIntervalSeconds > 10 ? 60 : 30),
       (_) async {
         if (!_isLive || _sessionToken == null) return;
-        try {
-          final pos = await Geolocator.getCurrentPosition(
-            locationSettings: LocationSettings(
-              accuracy: _trackingIntervalSeconds > 10
-                  ? LocationAccuracy.medium
-                  : LocationAccuracy.high,
-              timeLimit: const Duration(seconds: 4),
-            ),
-          );
-          await _handleNewPosition(pos);
-        } catch (_) {}
-
-        // Poll spectators watching our session
-        try {
-          final viewers = await api.getViewers(_sessionToken!);
-          if (mounted) setState(() => _viewers = viewers);
-        } catch (_) {}
-
-        // Poll incoming cheers from spectators
-        try {
-          final cheers = await api.getCheers(_sessionToken!);
-          if (mounted) {
-            for (final c in cheers) {
-              if (!_seenCheerIds.contains(c.id)) {
-                _seenCheerIds.add(c.id);
-                final text = c.message != null && c.message!.isNotEmpty
-                    ? '${c.emoji} "${c.message}" — dari ${c.senderName}'
-                    : '${c.emoji} Sorakan semangat dari ${c.senderName}!';
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(text),
-                    backgroundColor: const Color(0xFF168654),
-                    duration: const Duration(seconds: 4),
-                    behavior: SnackBarBehavior.floating,
-                  ),
-                );
-              }
-            }
-            setState(() => _cheers = cheers);
+        final now = DateTime.now();
+        final thresholdSec = _trackingIntervalSeconds > 10 ? 60 : 30;
+        if (_lastSentTime == null ||
+            now.difference(_lastSentTime!).inSeconds >= thresholdSec) {
+          if (_lastSentPosition != null) {
+            await _handleNewPosition(_lastSentPosition!);
           }
-        } catch (_) {}
+        }
       },
     );
   }
@@ -603,7 +647,7 @@ class _TrackingHomeState extends State<TrackingHome> {
         _isLive = true;
       });
 
-      // 1. Immediately request the initial real GPS position fix
+      // 1. Immediately request the initial real GPS position fix (and sync viewers/cheers)
       try {
         final initialPos = await Geolocator.getCurrentPosition(
           locationSettings: const LocationSettings(
@@ -616,23 +660,8 @@ class _TrackingHomeState extends State<TrackingHome> {
         debugPrint('Initial GPS fetch error: $err');
       }
 
-      // 2. Start position change stream & timer based on selected battery mode
+      // 2. Start position change stream with foreground service & wakelock
       _startTimersAndStream();
-
-      // Initial viewers & cheers fetch
-      try {
-        final initialViewers = await api.getViewers(_sessionToken!);
-        final initialCheers = await api.getCheers(_sessionToken!);
-        for (final c in initialCheers) {
-          _seenCheerIds.add(c.id);
-        }
-        if (mounted) {
-          setState(() {
-            _viewers = initialViewers;
-            _cheers = initialCheers;
-          });
-        }
-      } catch (_) {}
     } catch (e) {
       setState(() => _isLocating = false);
       if (mounted) {
@@ -648,6 +677,8 @@ class _TrackingHomeState extends State<TrackingHome> {
     _positionSubscription = null;
     _pollingTimer?.cancel();
     _pollingTimer = null;
+    _lastSentPosition = null;
+    _lastSentTime = null;
 
     if (_sessionToken != null) {
       try {
@@ -1423,7 +1454,7 @@ class _TrackingHomeState extends State<TrackingHome> {
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
                 itemCount: _cheers.take(5).length,
-                separatorBuilder: (_, __) =>
+                separatorBuilder: (context, index) =>
                     const Divider(height: 16, color: Color(0xFFF0F0F0)),
                 itemBuilder: (context, index) {
                   final cheer = _cheers[index];
@@ -1630,7 +1661,7 @@ class _TrackingHomeState extends State<TrackingHome> {
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
                 itemCount: _viewers.length,
-                separatorBuilder: (_, __) =>
+                separatorBuilder: (context, index) =>
                     const Divider(height: 16, color: Color(0xFFF0F0F0)),
                 itemBuilder: (context, index) {
                   final viewer = _viewers[index];

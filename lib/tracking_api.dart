@@ -39,7 +39,7 @@ class TrackingApi {
   }
 
   /// Sends a GPS position fix to the tracking server.
-  Future<void> sendLocation({
+  Future<LocationSyncResponse?> sendLocation({
     required String token,
     required double latitude,
     required double longitude,
@@ -74,14 +74,21 @@ class TrackingApi {
     if (response.statusCode >= 300) {
       throw Exception('Location update failed: ${response.statusCode}');
     }
+
+    try {
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      return LocationSyncResponse.fromJson(data);
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Sends a batch of queued GPS fixes (Store & Forward offline sync).
-  Future<int> sendLocationBatch({
+  Future<LocationSyncResponse?> sendLocationBatch({
     required String token,
     required List<Map<String, dynamic>> locations,
   }) async {
-    if (locations.isEmpty) return 0;
+    if (locations.isEmpty) return null;
     final uri = Uri.parse('$baseUrl/api/tracking/location');
     final response = await http.post(
       uri,
@@ -96,8 +103,12 @@ class TrackingApi {
       throw Exception('Batch location update failed: ${response.statusCode}');
     }
 
-    final data = jsonDecode(response.body) as Map<String, dynamic>;
-    return data['syncedCount'] as int? ?? locations.length;
+    try {
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      return LocationSyncResponse.fromJson(data);
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Stops an active tracking session.
@@ -195,3 +206,37 @@ class ViewerInfo {
     );
   }
 }
+
+class LocationSyncResponse {
+  const LocationSyncResponse({
+    this.syncedCount,
+    this.activeViewerCount = 0,
+    this.viewers = const [],
+    this.cheers = const [],
+  });
+
+  final int? syncedCount;
+  final int activeViewerCount;
+  final List<ViewerInfo> viewers;
+  final List<CheerInfo> cheers;
+
+  factory LocationSyncResponse.fromJson(Map<String, dynamic> json) {
+    final sessionMap = json['session'] as Map<String, dynamic>?;
+    final rawViewers = (json['viewers'] ?? sessionMap?['viewers']) as List<dynamic>? ?? [];
+    final rawCheers = (json['cheers'] ?? sessionMap?['cheers']) as List<dynamic>? ?? [];
+    final activeCount = (json['activeViewerCount'] ?? sessionMap?['activeViewerCount']) as int? ?? 0;
+    final synced = json['syncedCount'] as int?;
+
+    return LocationSyncResponse(
+      syncedCount: synced,
+      activeViewerCount: activeCount,
+      viewers: rawViewers
+          .map((v) => ViewerInfo.fromJson(v as Map<String, dynamic>))
+          .toList(),
+      cheers: rawCheers
+          .map((c) => CheerInfo.fromJson(c as Map<String, dynamic>))
+          .toList(),
+    );
+  }
+}
+

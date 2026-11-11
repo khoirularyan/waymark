@@ -15,7 +15,7 @@ class GpxRoutePoint {
   List<double> toLngLat() => [
     longitude,
     latitude,
-    if (elevation != null) elevation!,
+    ?elevation,
   ];
 }
 
