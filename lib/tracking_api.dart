@@ -45,19 +45,30 @@ class TrackingApi {
     required double longitude,
     required double accuracy,
     required int battery,
+    double? altitude,
+    double? speed,
+    double? heading,
+    bool? isSos,
   }) async {
     final uri = Uri.parse('$baseUrl/api/tracking/location');
+    final Map<String, dynamic> payload = {
+      'token': token,
+      'latitude': latitude,
+      'longitude': longitude,
+      'accuracy': accuracy,
+      'battery': battery,
+      'recordedAt': DateTime.now().toUtc().toIso8601String(),
+    };
+
+    if (altitude != null) payload['altitude'] = altitude;
+    if (speed != null) payload['speed'] = speed;
+    if (heading != null) payload['heading'] = heading;
+    if (isSos != null) payload['isSos'] = isSos;
+
     final response = await http.post(
       uri,
       headers: {'content-type': 'application/json'},
-      body: jsonEncode({
-        'token': token,
-        'latitude': latitude,
-        'longitude': longitude,
-        'accuracy': accuracy,
-        'battery': battery,
-        'recordedAt': DateTime.now().toUtc().toIso8601String(),
-      }),
+      body: jsonEncode(payload),
     );
 
     if (response.statusCode >= 300) {
@@ -93,6 +104,48 @@ class TrackingApi {
     } catch (_) {
       return [];
     }
+  }
+
+  /// Retrieves the recent cheers sent by spectators.
+  Future<List<CheerInfo>> getCheers(String token) async {
+    try {
+      final uri = Uri.parse('$baseUrl/api/tracking/$token/cheer');
+      final response = await http.get(uri);
+      if (response.statusCode != 200) return [];
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final list = data['cheers'] as List<dynamic>? ?? [];
+      return list
+          .map((c) => CheerInfo.fromJson(c as Map<String, dynamic>))
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+}
+
+class CheerInfo {
+  const CheerInfo({
+    required this.id,
+    required this.senderName,
+    this.message,
+    this.emoji = '👏',
+    required this.createdAt,
+  });
+
+  final String id;
+  final String senderName;
+  final String? message;
+  final String emoji;
+  final String createdAt;
+
+  factory CheerInfo.fromJson(Map<String, dynamic> json) {
+    return CheerInfo(
+      id: json['id'] as String? ?? '',
+      senderName: json['senderName'] as String? ?? 'Penonton',
+      message: json['message'] as String?,
+      emoji: json['emoji'] as String? ?? '👏',
+      createdAt: json['createdAt'] as String? ?? '',
+    );
   }
 }
 

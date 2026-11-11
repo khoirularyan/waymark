@@ -12,7 +12,29 @@ class GpxRoutePoint {
   final double longitude;
   final double? elevation;
 
-  List<double> toLngLat() => [longitude, latitude];
+  List<double> toLngLat() => [
+    longitude,
+    latitude,
+    if (elevation != null) elevation!,
+  ];
+}
+
+class RouteProgress {
+  const RouteProgress({
+    required this.closestIndex,
+    required this.distanceFromRouteMeters,
+    required this.isOffCourse,
+    required this.distanceCoveredKm,
+    required this.remainingDistanceKm,
+    required this.remainingElevationGainMeters,
+  });
+
+  final int closestIndex;
+  final double distanceFromRouteMeters;
+  final bool isOffCourse;
+  final double distanceCoveredKm;
+  final double remainingDistanceKm;
+  final double remainingElevationGainMeters;
 }
 
 class GpxRoute {
@@ -42,6 +64,68 @@ class GpxRoute {
         'coordinates': points.map((p) => p.toLngLat()).toList(),
       },
     };
+  }
+
+  RouteProgress calculateProgress(double currentLat, double currentLon) {
+    if (points.isEmpty) {
+      return const RouteProgress(
+        closestIndex: 0,
+        distanceFromRouteMeters: 0,
+        isOffCourse: false,
+        distanceCoveredKm: 0,
+        remainingDistanceKm: 0,
+        remainingElevationGainMeters: 0,
+      );
+    }
+
+    int closestIdx = 0;
+    double minDistanceKm = double.infinity;
+
+    for (int i = 0; i < points.length; i++) {
+      final p = points[i];
+      final d = _haversineKm(currentLat, currentLon, p.latitude, p.longitude);
+      if (d < minDistanceKm) {
+        minDistanceKm = d;
+        closestIdx = i;
+      }
+    }
+
+    final double distanceFromRouteMeters = minDistanceKm * 1000.0;
+    final bool isOffCourse = distanceFromRouteMeters > 75.0;
+
+    double coveredKm = 0.0;
+    for (int i = 0; i < closestIdx; i++) {
+      coveredKm += _haversineKm(
+        points[i].latitude,
+        points[i].longitude,
+        points[i + 1].latitude,
+        points[i + 1].longitude,
+      );
+    }
+
+    double remainingKm = 0.0;
+    double remainingEle = 0.0;
+    for (int i = closestIdx; i < points.length - 1; i++) {
+      remainingKm += _haversineKm(
+        points[i].latitude,
+        points[i].longitude,
+        points[i + 1].latitude,
+        points[i + 1].longitude,
+      );
+      if (points[i].elevation != null && points[i + 1].elevation != null) {
+        final diff = points[i + 1].elevation! - points[i].elevation!;
+        if (diff > 0) remainingEle += diff;
+      }
+    }
+
+    return RouteProgress(
+      closestIndex: closestIdx,
+      distanceFromRouteMeters: distanceFromRouteMeters,
+      isOffCourse: isOffCourse,
+      distanceCoveredKm: double.parse(coveredKm.toStringAsFixed(2)),
+      remainingDistanceKm: double.parse(remainingKm.toStringAsFixed(2)),
+      remainingElevationGainMeters: double.parse(remainingEle.toStringAsFixed(0)),
+    );
   }
 
   static GpxRoute parse(

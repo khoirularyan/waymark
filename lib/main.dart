@@ -74,6 +74,15 @@ class _TrackingHomeState extends State<TrackingHome> {
 
   // Selected GPX course/route
   GpxRoute? _selectedRoute;
+  RouteProgress? _routeProgress;
+
+  // Performance & Safety state
+  bool _isSos = false;
+  List<CheerInfo> _cheers = [];
+  final Set<String> _seenCheerIds = {};
+  double _currentSpeedKmh = 0.0;
+  double? _currentAltitudeM;
+  String _currentPace = "—";
 
   @override
   void initState() {
@@ -279,6 +288,25 @@ class _TrackingHomeState extends State<TrackingHome> {
       battery = await Battery().batteryLevel;
     } catch (_) {}
 
+    final speedKmh = position.speed * 3.6;
+    String paceStr = "—";
+    if (speedKmh > 0.5) {
+      final paceMinTotal = 60 / speedKmh;
+      final paceMin = paceMinTotal.floor();
+      final paceSec = ((paceMinTotal - paceMin) * 60).round();
+      paceStr = "$paceMin'${paceSec.toString().padLeft(2, '0')}\"";
+    } else {
+      paceStr = "Diam";
+    }
+
+    RouteProgress? progress;
+    if (_selectedRoute != null) {
+      progress = _selectedRoute!.calculateProgress(
+        position.latitude,
+        position.longitude,
+      );
+    }
+
     try {
       await api.sendLocation(
         token: _sessionToken!,
@@ -286,6 +314,10 @@ class _TrackingHomeState extends State<TrackingHome> {
         longitude: position.longitude,
         accuracy: position.accuracy,
         battery: battery,
+        altitude: position.altitude,
+        speed: position.speed,
+        heading: position.heading,
+        isSos: _isSos,
       );
 
       if (mounted) {
@@ -296,9 +328,86 @@ class _TrackingHomeState extends State<TrackingHome> {
           _lastUpdateTime = TimeOfDay.now().format(context);
           _lastCoords =
               '${position.latitude.toStringAsFixed(4)}, ${position.longitude.toStringAsFixed(4)}';
+          _currentSpeedKmh = speedKmh;
+          _currentAltitudeM = position.altitude;
+          _currentPace = paceStr;
+          _routeProgress = progress;
         });
       }
     } catch (_) {}
+  }
+
+  Future<void> _toggleSos() async {
+    if (!_isSos) {
+      final confirm = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          icon: const Icon(
+            Icons.warning_amber_rounded,
+            color: Color(0xFFDC4545),
+            size: 48,
+          ),
+          title: const Text('Aktifkan Sinyal SOS Darurat?'),
+          content: const Text(
+            'Peringatan alarm darurat merah akan segera dikirimkan ke semua orang yang memantau live tracking Anda, beserta koordinat GPS akurat Anda di peta.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Batal'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFFDC4545),
+              ),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('KIRIM SOS DARURAT'),
+            ),
+          ],
+        ),
+      );
+
+      if (confirm == true) {
+        setState(() => _isSos = true);
+        if (_sessionToken != null) {
+          try {
+            final pos = await Geolocator.getCurrentPosition(
+              locationSettings: const LocationSettings(
+                accuracy: LocationAccuracy.high,
+              ),
+            );
+            await _handleNewPosition(pos);
+          } catch (_) {}
+        }
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                '🚨 Sinyal SOS darurat telah aktif dan disiarkan ke penonton!',
+              ),
+              backgroundColor: Color(0xFFDC4545),
+              duration: Duration(seconds: 5),
+            ),
+          );
+        }
+      }
+    } else {
+      setState(() => _isSos = false);
+      if (_sessionToken != null) {
+        try {
+          final pos = await Geolocator.getCurrentPosition();
+          await _handleNewPosition(pos);
+        } catch (_) {}
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Sinyal SOS darurat dimatikan.'),
+            backgroundColor: Color(0xFF168654),
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _startTracking() async {
@@ -385,12 +494,47 @@ class _TrackingHomeState extends State<TrackingHome> {
             });
           }
         } catch (_) {}
+
+        // Poll incoming cheers from spectators
+        try {
+          final cheers = await api.getCheers(_sessionToken!);
+          if (mounted) {
+            for (final c in cheers) {
+              if (!_seenCheerIds.contains(c.id)) {
+                _seenCheerIds.add(c.id);
+                final text = c.message != null && c.message!.isNotEmpty
+                    ? '${c.emoji} "${c.message}" — dari ${c.senderName}'
+                    : '${c.emoji} Sorakan semangat dari ${c.senderName}!';
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(text),
+                    backgroundColor: const Color(0xFF168654),
+                    duration: const Duration(seconds: 4),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              }
+            }
+            setState(() {
+              _cheers = cheers;
+            });
+          }
+        } catch (_) {}
       });
 
-      // Initial viewers fetch
+      // Initial viewers & cheers fetch
       try {
         final initialViewers = await api.getViewers(_sessionToken!);
-        if (mounted) setState(() => _viewers = initialViewers);
+        final initialCheers = await api.getCheers(_sessionToken!);
+        for (final c in initialCheers) {
+          _seenCheerIds.add(c.id);
+        }
+        if (mounted) {
+          setState(() {
+            _viewers = initialViewers;
+            _cheers = initialCheers;
+          });
+        }
       } catch (_) {}
     } catch (e) {
       setState(() => _isLocating = false);
@@ -422,7 +566,11 @@ class _TrackingHomeState extends State<TrackingHome> {
         _isLive = false;
         _sessionToken = null;
         _isLocating = false;
+        _isSos = false;
         _viewers = [];
+        _cheers = [];
+        _seenCheerIds.clear();
+        _routeProgress = null;
       });
     }
   }
@@ -482,6 +630,41 @@ class _TrackingHomeState extends State<TrackingHome> {
             icon: const Icon(Icons.tune, size: 20, color: Colors.black87),
             tooltip: 'Server Settings',
           ),
+          if (_isLive)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  backgroundColor: _isSos
+                      ? const Color(0xFFDC2626)
+                      : const Color(0xFFFEF2F2),
+                  foregroundColor: _isSos
+                      ? Colors.white
+                      : const Color(0xFFDC2626),
+                  side: BorderSide(
+                    color: _isSos ? Colors.transparent : const Color(0xFFFCA5A5),
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+                onPressed: _toggleSos,
+                icon: Icon(
+                  _isSos ? Icons.warning : Icons.emergency_outlined,
+                  size: 14,
+                ),
+                label: Text(
+                  _isSos ? 'SOS ON' : 'SOS',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 11,
+                  ),
+                ),
+              ),
+            ),
           Padding(
             padding: const EdgeInsets.only(right: 16),
             child: Center(
@@ -535,6 +718,89 @@ class _TrackingHomeState extends State<TrackingHome> {
                 style: const TextStyle(color: Colors.black54, fontSize: 16),
               ),
               const SizedBox(height: 24),
+              if (_isLive && _isSos) ...[
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFDC2626),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.emergency, color: Colors.white, size: 28),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'SINYAL DARURAT (SOS) AKTIF!',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                              ),
+                            ),
+                            SizedBox(height: 2),
+                            Text(
+                              'Pemantau di web menerima peringatan alarm dan koordinat Anda.',
+                              style: TextStyle(color: Colors.white70, fontSize: 11),
+                            ),
+                          ],
+                        ),
+                      ),
+                      FilledButton.tonal(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: const Color(0xFFDC2626),
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          minimumSize: Size.zero,
+                        ),
+                        onPressed: _toggleSos,
+                        child: const Text('Matikan', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+              ],
+              if (_isLive && _routeProgress != null && _routeProgress!.isOffCourse) ...[
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFFBEB),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: const Color(0xFFFDE68A)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.warning_amber_rounded, color: Color(0xFFD97706), size: 24),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Peringatan: Melenceng dari Rute GPX',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                                color: Color(0xFF92400E),
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Posisi Anda terdeteksi melenceng ~${_routeProgress!.distanceFromRouteMeters.round()} meter dari rute resmi.',
+                              style: const TextStyle(fontSize: 11, color: Color(0xFFB45309)),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+              ],
               _buildStatusCard(),
               const SizedBox(height: 14),
               _buildMetricsRow(),
@@ -643,6 +909,8 @@ class _TrackingHomeState extends State<TrackingHome> {
                 ),
                 const SizedBox(height: 14),
                 _buildViewersCard(),
+                const SizedBox(height: 14),
+                _buildCheersCard(),
               ],
             ],
           ),
@@ -880,7 +1148,7 @@ class _TrackingHomeState extends State<TrackingHome> {
         Row(
           children: [
             _buildMetricItem(
-              'GPS',
+              'GPS Sinyal',
               _lastCoords != null
                   ? 'Fix OK'
                   : (_isLocating
@@ -900,15 +1168,178 @@ class _TrackingHomeState extends State<TrackingHome> {
         const SizedBox(height: 10),
         Row(
           children: [
-            _buildMetricItem('Internet', 'Connected'),
+            _buildMetricItem(
+              'Pace Saat Ini',
+              _currentPace,
+              subtext: _currentSpeedKmh > 0.5 ? '${_currentSpeedKmh.toStringAsFixed(1)} km/h' : null,
+            ),
             const SizedBox(width: 10),
             _buildMetricItem(
-              'Battery',
+              'Ketinggian',
+              _currentAltitudeM != null ? '${_currentAltitudeM!.round()} mdpl' : '—',
+              subtext: 'Elevasi sekarang',
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            _buildMetricItem(
+              'Baterai HP',
               _batteryLevel == 0 ? '—' : '$_batteryLevel%',
+              subtext: _batteryLevel <= 20 ? 'Perlu dicas!' : 'Normal',
+            ),
+            const SizedBox(width: 10),
+            _buildMetricItem(
+              _selectedRoute != null ? 'Sisa Jarak' : 'Koneksi',
+              _selectedRoute != null
+                  ? '${_routeProgress?.remainingDistanceKm ?? _selectedRoute!.totalDistanceKm} km'
+                  : 'Connected',
+              subtext: _selectedRoute != null
+                  ? 'Sisa D+: +${_routeProgress?.remainingElevationGainMeters ?? _selectedRoute!.elevationGainMeters}m'
+                  : null,
+              isHighlight: _selectedRoute != null,
             ),
           ],
         ),
       ],
+    );
+  }
+
+  Widget _buildCheersCard() {
+    if (!_isLive || _sessionToken == null) return const SizedBox.shrink();
+
+    return Card(
+      elevation: 0,
+      color: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: const BorderSide(color: Color(0xFFEAEAEA)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: _cheers.isNotEmpty
+                            ? const Color(0xFFFFF1F2)
+                            : const Color(0xFFF5F5F5),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(
+                        Icons.favorite_rounded,
+                        color: _cheers.isNotEmpty
+                            ? const Color(0xFFE11D48)
+                            : Colors.black54,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    const Text(
+                      'Sorakan Penonton',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                        color: kInkDark,
+                      ),
+                    ),
+                  ],
+                ),
+                if (_cheers.isNotEmpty)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF1F2),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      '${_cheers.length} Pesan',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFFE11D48),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            if (_cheers.isEmpty) ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF9F9F9),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.chat_bubble_outline, size: 18, color: Colors.black45),
+                    SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Belum ada sorakan. Penonton di web bisa mengirim emoji & pesan semangat yang langsung muncul di sini.',
+                        style: TextStyle(fontSize: 12, color: Colors.black54),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ] else ...[
+              ListView.separated(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: _cheers.take(5).length,
+                separatorBuilder: (_, __) =>
+                    const Divider(height: 16, color: Color(0xFFF0F0F0)),
+                itemBuilder: (context, index) {
+                  final cheer = _cheers[index];
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(cheer.emoji, style: const TextStyle(fontSize: 22)),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              cheer.senderName,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                                color: kInkDark,
+                              ),
+                            ),
+                            if (cheer.message != null && cheer.message!.isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 2),
+                                child: Text(
+                                  cheer.message!,
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.black87,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 
