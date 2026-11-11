@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { Mountain, TrendingUp, Compass, Flag } from "lucide-react";
+import { Mountain, TrendingUp, Compass, Flag, AlertTriangle } from "lucide-react";
 
 interface ElevationProfileProps {
   routeGeojson: any;
@@ -91,6 +91,32 @@ export function ElevationProfile({
       }
     }
 
+    // Runner is considered off-course if farther than 300 meters (0.3 km) from track
+    const isOffCourse = !currentPos || minDistanceToRunner > 0.3;
+
+    // Calculate total elevation gain of the whole route
+    let totalEleGain = 0;
+    for (let i = 0; i < points.length - 1; i++) {
+      const diff = points[i + 1].ele - points[i].ele;
+      if (diff > 0) totalEleGain += diff;
+    }
+
+    if (isOffCourse) {
+      return {
+        points,
+        totalDist,
+        minEle,
+        maxEle,
+        closestIndex: 0,
+        currentPoint: points[0],
+        coveredKm: 0,
+        remainingKm: totalDist,
+        remainingEleGain: Math.round(totalEleGain),
+        offCourseKm: minDistanceToRunner,
+        isOffCourse: true,
+      };
+    }
+
     const currentPoint = points[closestIndex] ?? points[0];
     const coveredKm = currentPoint.distKm;
     const remainingKm = Math.max(0, totalDist - coveredKm);
@@ -113,6 +139,7 @@ export function ElevationProfile({
       remainingKm,
       remainingEleGain: Math.round(remainingEleGain),
       offCourseKm: minDistanceToRunner,
+      isOffCourse: false,
     };
   }, [routeGeojson, totalDistance, elevationGain, currentPos]);
 
@@ -120,8 +147,18 @@ export function ElevationProfile({
     return null;
   }
 
-  const { points, totalDist, minEle, maxEle, currentPoint, coveredKm, remainingKm, remainingEleGain } =
-    profileData;
+  const {
+    points,
+    totalDist,
+    minEle,
+    maxEle,
+    currentPoint,
+    coveredKm,
+    remainingKm,
+    remainingEleGain,
+    isOffCourse,
+    offCourseKm,
+  } = profileData;
 
   const width = 800;
   const height = 180;
@@ -167,6 +204,12 @@ export function ElevationProfile({
 
         {/* Quick Stats Pills */}
         <div className="flex flex-wrap items-center gap-2 text-xs">
+          {isOffCourse && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2.5 py-1 font-medium text-rose-800 border border-rose-200">
+              <AlertTriangle size={13} className="text-rose-600" />
+              Status: <strong className="text-rose-950">Di Luar Jalur ({offCourseKm >= 1 ? `${offCourseKm.toFixed(1)} km` : `${Math.round(offCourseKm * 1000)} m`})</strong>
+            </span>
+          )}
           <span className="inline-flex items-center gap-1 rounded-full bg-neutral-100 px-2.5 py-1 font-medium text-neutral-700">
             <TrendingUp size={13} className="text-emerald-600" />
             Elevasi: <strong className="text-neutral-900">{displayAltitude} mdpl</strong>
@@ -237,8 +280,8 @@ export function ElevationProfile({
             strokeLinecap="round"
           />
 
-          {/* Completed path highlight */}
-          {svgCoords.length > 0 && (
+          {/* Completed path highlight (only when runner is on the route) */}
+          {!isOffCourse && svgCoords.length > 0 && (
             <path
               d={svgCoords
                 .slice(0, profileData.closestIndex + 1)
@@ -251,20 +294,22 @@ export function ElevationProfile({
             />
           )}
 
-          {/* Runner vertical indicator line */}
-          <line
-            x1={runnerX}
-            y1={paddingTop}
-            x2={runnerX}
-            y2={paddingTop + chartH}
-            stroke="#ef4444"
-            strokeWidth="1.5"
-            strokeDasharray="3 3"
-          />
-
-          {/* Runner dot on profile */}
-          <circle cx={runnerX} cy={runnerY} r="7" fill="#ef4444" stroke="#ffffff" strokeWidth="2.5" />
-          <circle cx={runnerX} cy={runnerY} r="12" fill="#ef4444" fillOpacity="0.25" className="animate-ping" />
+          {/* Runner vertical indicator line & dot (only when on-course) */}
+          {!isOffCourse && (
+            <>
+              <line
+                x1={runnerX}
+                y1={paddingTop}
+                x2={runnerX}
+                y2={paddingTop + chartH}
+                stroke="#ef4444"
+                strokeWidth="1.5"
+                strokeDasharray="3 3"
+              />
+              <circle cx={runnerX} cy={runnerY} r="7" fill="#ef4444" stroke="#ffffff" strokeWidth="2.5" />
+              <circle cx={runnerX} cy={runnerY} r="12" fill="#ef4444" fillOpacity="0.25" className="animate-ping" />
+            </>
+          )}
 
           {/* Axis labels */}
           <text x={paddingX} y={height - 8} fontSize="11" fill="#737373" fontWeight="500">
@@ -285,16 +330,30 @@ export function ElevationProfile({
           </text>
         </svg>
 
-        {/* Runner indicator pill */}
-        <div
-          className="absolute -translate-x-1/2 rounded-md bg-neutral-900/90 px-2 py-0.5 text-[10px] font-semibold text-white shadow-md backdrop-blur-xs pointer-events-none"
-          style={{
-            left: `${(runnerX / width) * 100}%`,
-            top: `${Math.max(6, (runnerY / height) * 100 - 18)}%`,
-          }}
-        >
-          🏃 {displayAltitude}m ({coveredKm.toFixed(1)} km)
-        </div>
+        {/* Runner indicator pill (only when on-course) */}
+        {!isOffCourse && (
+          <div
+            className="absolute -translate-x-1/2 rounded-md bg-neutral-900/90 px-2 py-0.5 text-[10px] font-semibold text-white shadow-md backdrop-blur-xs pointer-events-none"
+            style={{
+              left: `${(runnerX / width) * 100}%`,
+              top: `${Math.max(6, (runnerY / height) * 100 - 18)}%`,
+            }}
+          >
+            🏃 {displayAltitude}m ({coveredKm.toFixed(1)} km)
+          </div>
+        )}
+
+        {/* Off-course / Not yet on route warning banner overlay */}
+        {isOffCourse && (
+          <div className="absolute inset-x-4 top-1/2 -translate-y-1/2 flex items-center justify-center pointer-events-none">
+            <div className="flex items-center gap-2 rounded-xl bg-neutral-900/85 px-4 py-2.5 text-xs font-medium text-white shadow-lg backdrop-blur-xs border border-neutral-700/60">
+              <AlertTriangle size={15} className="text-amber-400 shrink-0" />
+              <span>
+                Pelari belum berada di lintasan rute resmi (<strong>{offCourseKm >= 1 ? `${offCourseKm.toFixed(1)} km` : `${Math.round(offCourseKm * 1000)} m`}</strong> ke rute terdekat)
+              </span>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
