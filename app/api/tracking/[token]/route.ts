@@ -20,7 +20,9 @@ export async function GET(_: Request, { params }: RouteProps) {
     );
   }
 
-  return NextResponse.json({
+  const payload = {
+    id: session.id,
+    shareToken: session.shareToken,
     runnerName: session.runnerName,
     eventName: session.eventName,
     status: session.status,
@@ -33,5 +35,10 @@ export async function GET(_: Request, { params }: RouteProps) {
     activeViewerCount: session.activeViewerCount ?? 0,
     cheers: session.cheers ?? [],
     isSos: session.isSos ?? false,
+  };
+
+  return NextResponse.json({
+    ...payload,
+    session: payload,
   });
 }

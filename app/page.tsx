@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowUpRight, BatteryMedium, MapPinned, Radio } from "lucide-react";
 import { Header } from "../components/brand";
+import { ResumeLiveBanner } from "../components/resume-live-banner";
 
 interface MetricProps {
   icon: React.ReactNode;
@@ -21,6 +22,7 @@ function Metric({ icon, value, label }: MetricProps) {
 export default function Home() {
   return (
     <main>
+      <ResumeLiveBanner />
       <Header />
 
       <section className="mx-auto grid max-w-7xl gap-12 px-5 py-16 sm:px-8 lg:grid-cols-[1.05fr_.95fr] lg:py-28">

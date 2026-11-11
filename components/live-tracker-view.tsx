@@ -15,6 +15,7 @@ import {
   Gauge,
   MapPin,
   Mountain,
+  Moon,
   PanelRightClose,
   PanelRightOpen,
   Route,
@@ -22,6 +23,7 @@ import {
   ShieldAlert,
   Signal,
   Sparkles,
+  Sun,
   TrendingUp,
   Users,
   X,
@@ -60,11 +62,51 @@ export function LiveTrackerView({ token, initialSession }: LiveTrackerViewProps)
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedCoords, setCopiedCoords] = useState(false);
 
+  // Theme Mode (Dark / Light)
+  const [isDark, setIsDark] = useState(false);
+
   // Full-page viewport layout states (No page scrolling)
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showElevationDock, setShowElevationDock] = useState(false);
   const [desktopTab, setDesktopTab] = useState<"cheers" | "stats">("cheers");
   const [mobileSheet, setMobileSheet] = useState<"none" | "elevation" | "cheers" | "stats">("none");
+
+  // Load theme and save last live session token
+  useEffect(() => {
+    // 1. Initialize theme
+    const savedTheme = localStorage.getItem("waymark_theme");
+    const prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const shouldBeDark = savedTheme === "dark" || (!savedTheme && prefersDark);
+    setIsDark(shouldBeDark);
+    if (shouldBeDark) {
+      document.documentElement.classList.add("dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+    }
+
+    // 2. Cache current live token for quick instant return
+    localStorage.setItem("waymark_last_live_token", token);
+  }, [token]);
+
+  useEffect(() => {
+    if (session?.eventName) {
+      localStorage.setItem("waymark_last_live_title", session.eventName);
+    }
+  }, [session?.eventName]);
+
+  const toggleTheme = () => {
+    setIsDark((prev) => {
+      const next = !prev;
+      if (next) {
+        document.documentElement.classList.add("dark");
+        localStorage.setItem("waymark_theme", "dark");
+      } else {
+        document.documentElement.classList.remove("dark");
+        localStorage.setItem("waymark_theme", "light");
+      }
+      return next;
+    });
+  };
 
   // Load / initialize spectator identity
   useEffect(() => {
@@ -87,7 +129,7 @@ export function LiveTrackerView({ token, initialSession }: LiveTrackerViewProps)
     }
   }, []);
 
-  // Heartbeat viewer ping
+  // Heartbeat viewer ping (Fast 3-second heartbeat for real-time presence)
   useEffect(() => {
     if (!visitorId || !displayName) return;
 
@@ -102,24 +144,25 @@ export function LiveTrackerView({ token, initialSession }: LiveTrackerViewProps)
     };
 
     pingViewer();
-    const interval = setInterval(pingViewer, 8000);
+    const interval = setInterval(pingViewer, 3000);
     return () => clearInterval(interval);
   }, [token, visitorId, displayName]);
 
-  // Polling live session data
+  // Polling live session data (2-second interval for instant cheers and metrics)
   useEffect(() => {
     const fetchSession = async () => {
       try {
         const res = await fetch(`/api/tracking/${token}`);
         if (!res.ok) return;
         const data = await res.json();
-        if (data.session) {
-          setSession(data.session);
+        const sessionObj = data.session ?? (data.runnerName ? data : null);
+        if (sessionObj) {
+          setSession(sessionObj);
         }
       } catch (_) {}
     };
 
-    const interval = setInterval(fetchSession, 3000);
+    const interval = setInterval(fetchSession, 2000);
     return () => clearInterval(interval);
   }, [token]);
 
@@ -224,21 +267,21 @@ export function LiveTrackerView({ token, initialSession }: LiveTrackerViewProps)
   const isEmergencySos = session?.isSos || latestLocation?.isSos;
 
   return (
-    <main className="h-screen h-[100dvh] w-screen overflow-hidden flex flex-col bg-[#fbfbfa] text-neutral-900 select-none">
+    <main className="h-screen h-[100dvh] w-screen overflow-hidden flex flex-col bg-[#fbfbfa] dark:bg-[#0b0f17] text-neutral-900 dark:text-neutral-100 select-none transition-colors">
       {/* 1. TOP NAVBAR (Sleek, h-14, Zero page scroll) */}
-      <header className="h-14 shrink-0 bg-white/95 backdrop-blur-md border-b border-neutral-200/90 px-4 sm:px-6 flex items-center justify-between z-30 shadow-xs">
+      <header className="h-14 shrink-0 bg-white/95 dark:bg-neutral-900/95 backdrop-blur-md border-b border-neutral-200/90 dark:border-neutral-800 px-4 sm:px-6 flex items-center justify-between z-30 shadow-xs transition-colors">
         {/* Left: Brand + Runner Info */}
         <div className="flex items-center gap-3">
           <Brand />
-          <div className="h-5 w-px bg-neutral-200 hidden sm:block" />
+          <div className="h-5 w-px bg-neutral-200 dark:bg-neutral-800 hidden sm:block" />
           <div className="flex items-center gap-2">
             <span
               className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-bold ${
                 isEmergencySos
                   ? "bg-rose-600 text-white animate-pulse"
                   : isLive
-                  ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                  : "bg-neutral-100 text-neutral-500"
+                  ? "bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800"
+                  : "bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400"
               }`}
             >
               <span
@@ -250,10 +293,10 @@ export function LiveTrackerView({ token, initialSession }: LiveTrackerViewProps)
             </span>
 
             <div className="hidden md:flex flex-col">
-              <span className="text-xs font-semibold text-neutral-900 leading-tight">
+              <span className="text-xs font-semibold text-neutral-900 dark:text-neutral-100 leading-tight">
                 {runnerName}
               </span>
-              <span className="text-[11px] text-neutral-500 truncate max-w-[200px]">
+              <span className="text-[11px] text-neutral-500 dark:text-neutral-400 truncate max-w-[200px]">
                 {eventName}
               </span>
             </div>
@@ -262,16 +305,16 @@ export function LiveTrackerView({ token, initialSession }: LiveTrackerViewProps)
 
         {/* Center: Live HUD Metrics (Desktop/Tablet) */}
         <div className="hidden lg:flex items-center gap-2">
-          <div className="flex items-center gap-1.5 rounded-lg bg-neutral-100/80 px-2.5 py-1 text-xs">
-            <Gauge size={13} className="text-emerald-600" />
-            <span className="text-neutral-500">Pace:</span>
-            <strong className="text-neutral-900">{paceStr}</strong>
+          <div className="flex items-center gap-1.5 rounded-lg bg-neutral-100/80 dark:bg-neutral-800/80 px-2.5 py-1 text-xs">
+            <Gauge size={13} className="text-emerald-600 dark:text-emerald-400" />
+            <span className="text-neutral-500 dark:text-neutral-400">Pace:</span>
+            <strong className="text-neutral-900 dark:text-neutral-100">{paceStr}</strong>
           </div>
 
-          <div className="flex items-center gap-1.5 rounded-lg bg-neutral-100/80 px-2.5 py-1 text-xs">
-            <Mountain size={13} className="text-emerald-600" />
-            <span className="text-neutral-500">Alt:</span>
-            <strong className="text-neutral-900">
+          <div className="flex items-center gap-1.5 rounded-lg bg-neutral-100/80 dark:bg-neutral-800/80 px-2.5 py-1 text-xs">
+            <Mountain size={13} className="text-emerald-600 dark:text-emerald-400" />
+            <span className="text-neutral-500 dark:text-neutral-400">Alt:</span>
+            <strong className="text-neutral-900 dark:text-neutral-100">
               {latestLocation?.altitude ? `${Math.round(latestLocation.altitude)}m` : "—"}
             </strong>
           </div>
@@ -284,19 +327,19 @@ export function LiveTrackerView({ token, initialSession }: LiveTrackerViewProps)
           </div>
 
           {session?.route && (
-            <div className="flex items-center gap-1.5 rounded-lg bg-emerald-50 border border-emerald-200 px-2.5 py-1 text-xs text-emerald-900">
-              <Compass size={13} className="text-emerald-600" />
+            <div className="flex items-center gap-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 px-2.5 py-1 text-xs text-emerald-900 dark:text-emerald-300">
+              <Compass size={13} className="text-emerald-600 dark:text-emerald-400" />
               <span>Rute: <strong>{totalDistance}</strong></span>
             </div>
           )}
         </div>
 
-        {/* Right: Spectators + Share + Toggle Sidebar */}
+        {/* Right: Spectators + Share + Theme Toggle + Toggle Sidebar */}
         <div className="flex items-center gap-2">
-          <div className="inline-flex items-center gap-1.5 rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-medium text-neutral-700">
-            <Eye size={13} className="text-emerald-600" />
+          <div className="inline-flex items-center gap-1.5 rounded-full bg-neutral-100 dark:bg-neutral-800 px-2.5 py-1 text-xs font-medium text-neutral-700 dark:text-neutral-300">
+            <Eye size={13} className="text-emerald-600 dark:text-emerald-400" />
             <span>{session?.activeViewerCount ?? 1}</span>
-            <span className="hidden sm:inline text-neutral-400">penonton</span>
+            <span className="hidden sm:inline text-neutral-400 dark:text-neutral-500">penonton</span>
           </div>
 
           <button
@@ -308,11 +351,21 @@ export function LiveTrackerView({ token, initialSession }: LiveTrackerViewProps)
             <span className="hidden sm:inline">{copiedLink ? "Tersalin!" : "Bagikan"}</span>
           </button>
 
+          {/* Theme Toggle Button */}
+          <button
+            type="button"
+            onClick={toggleTheme}
+            className="inline-flex items-center justify-center size-8 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-white transition-colors"
+            title={isDark ? "Ganti ke Mode Terang" : "Ganti ke Mode Gelap"}
+          >
+            {isDark ? <Sun size={15} className="text-amber-400" /> : <Moon size={15} />}
+          </button>
+
           {/* Desktop Sidebar Toggle */}
           <button
             type="button"
             onClick={() => setSidebarOpen((prev) => !prev)}
-            className="hidden lg:inline-flex items-center justify-center size-8 rounded-lg border border-neutral-200 text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 transition-colors"
+            className="hidden lg:inline-flex items-center justify-center size-8 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-white transition-colors"
             title={sidebarOpen ? "Sembunyikan Panel Samping" : "Tampilkan Panel Samping"}
           >
             {sidebarOpen ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}
@@ -373,11 +426,13 @@ export function LiveTrackerView({ token, initialSession }: LiveTrackerViewProps)
           />
 
           {/* Floating Pill Switcher on Mobile (<lg) */}
-          <div className="lg:hidden absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 rounded-full bg-white/95 p-1 shadow-lg backdrop-blur-md border border-neutral-200/90 text-xs font-semibold">
+          <div className="lg:hidden absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 rounded-full bg-white/95 dark:bg-neutral-900/95 p-1 shadow-lg backdrop-blur-md border border-neutral-200/90 dark:border-neutral-800 text-xs font-semibold">
             <button
               onClick={() => setMobileSheet("none")}
               className={`px-3 py-1.5 rounded-full transition-all ${
-                mobileSheet === "none" ? "bg-neutral-900 text-white shadow-xs" : "text-neutral-600"
+                mobileSheet === "none"
+                  ? "bg-neutral-900 dark:bg-emerald-600 text-white shadow-xs"
+                  : "text-neutral-600 dark:text-neutral-400"
               }`}
             >
               🗺️ Peta
@@ -386,7 +441,9 @@ export function LiveTrackerView({ token, initialSession }: LiveTrackerViewProps)
               <button
                 onClick={() => setMobileSheet("elevation")}
                 className={`px-3 py-1.5 rounded-full transition-all ${
-                  mobileSheet === "elevation" ? "bg-neutral-900 text-white shadow-xs" : "text-neutral-600"
+                  mobileSheet === "elevation"
+                    ? "bg-neutral-900 dark:bg-emerald-600 text-white shadow-xs"
+                    : "text-neutral-600 dark:text-neutral-400"
                 }`}
               >
                 ⛰️ Elevasi
@@ -395,41 +452,52 @@ export function LiveTrackerView({ token, initialSession }: LiveTrackerViewProps)
             <button
               onClick={() => setMobileSheet("cheers")}
               className={`px-3 py-1.5 rounded-full transition-all ${
-                mobileSheet === "cheers" ? "bg-neutral-900 text-white shadow-xs" : "text-neutral-600"
+                mobileSheet === "cheers"
+                  ? "bg-neutral-900 dark:bg-emerald-600 text-white shadow-xs"
+                  : "text-neutral-600 dark:text-neutral-400"
               }`}
             >
-              🎉 Sorakan ({session?.cheers?.length ?? 0})
+              🎉 ({session?.cheers?.length ?? 0})
             </button>
             <button
               onClick={() => setMobileSheet("stats")}
               className={`px-3 py-1.5 rounded-full transition-all ${
-                mobileSheet === "stats" ? "bg-neutral-900 text-white shadow-xs" : "text-neutral-600"
+                mobileSheet === "stats"
+                  ? "bg-neutral-900 dark:bg-emerald-600 text-white shadow-xs"
+                  : "text-neutral-600 dark:text-neutral-400"
               }`}
             >
               📊 Info
+            </button>
+            <button
+              onClick={toggleTheme}
+              className="px-2 py-1.5 text-neutral-600 dark:text-neutral-400 rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-800"
+              title="Ganti Tema"
+            >
+              {isDark ? "☀️" : "🌙"}
             </button>
           </div>
 
           {/* Desktop Floating Collapsible Elevation Profile Dock (Bottom of map) */}
           {session?.route && (
             <div className="hidden lg:block absolute inset-x-6 bottom-4 z-20 pointer-events-none">
-              <div className="pointer-events-auto max-w-4xl mx-auto rounded-2xl bg-white/95 backdrop-blur-md border border-neutral-200/90 shadow-xl overflow-hidden transition-all duration-300">
+              <div className="pointer-events-auto max-w-4xl mx-auto rounded-2xl bg-white/95 dark:bg-neutral-900/95 backdrop-blur-md border border-neutral-200/90 dark:border-neutral-800 shadow-xl overflow-hidden transition-all duration-300">
                 <div
                   onClick={() => setShowElevationDock((prev) => !prev)}
-                  className="flex items-center justify-between px-4 py-2.5 cursor-pointer bg-neutral-50/80 hover:bg-neutral-100/80 transition-colors border-b border-neutral-200/50"
+                  className="flex items-center justify-between px-4 py-2.5 cursor-pointer bg-neutral-50/80 dark:bg-neutral-800/80 hover:bg-neutral-100/80 dark:hover:bg-neutral-700/80 transition-colors border-b border-neutral-200/50 dark:border-neutral-700/50"
                 >
                   <div className="flex items-center gap-2">
-                    <Mountain size={16} className="text-emerald-600" />
-                    <span className="text-xs font-bold text-neutral-900">
+                    <Mountain size={16} className="text-emerald-600 dark:text-emerald-400" />
+                    <span className="text-xs font-bold text-neutral-900 dark:text-neutral-100">
                       Profil Elevasi & Kontur Jalur ({totalDistance})
                     </span>
                     {isOffCourse && (
-                      <span className="text-[10px] bg-amber-100 text-amber-800 font-semibold px-2 py-0.5 rounded-full">
+                      <span className="text-[10px] bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 font-semibold px-2 py-0.5 rounded-full">
                         Di Luar Jalur (~{(offCourseMeters / 1000).toFixed(1)} km)
                       </span>
                     )}
                   </div>
-                  <div className="flex items-center gap-2 text-xs text-neutral-500 font-medium">
+                  <div className="flex items-center gap-2 text-xs text-neutral-500 dark:text-neutral-400 font-medium">
                     <span>{showElevationDock ? "Sembunyikan" : "Buka Profil"}</span>
                     {showElevationDock ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
                   </div>
@@ -454,12 +522,12 @@ export function LiveTrackerView({ token, initialSession }: LiveTrackerViewProps)
 
           {/* Mobile Slide-Up Modal Sheets (Full Viewport, Zero page scroll) */}
           {mobileSheet !== "none" && (
-            <div className="lg:hidden absolute inset-0 bg-black/40 backdrop-blur-xs z-30 flex flex-col justify-end">
-              <div className="bg-white rounded-t-3xl shadow-2xl max-h-[82vh] flex flex-col overflow-hidden animate-in slide-in-from-bottom-5 duration-200">
+            <div className="lg:hidden absolute inset-0 bg-black/50 backdrop-blur-xs z-30 flex flex-col justify-end">
+              <div className="bg-white dark:bg-neutral-900 rounded-t-3xl shadow-2xl max-h-[82vh] flex flex-col overflow-hidden animate-in slide-in-from-bottom-5 duration-200 border-t border-neutral-200 dark:border-neutral-800">
                 {/* Modal Header */}
-                <div className="flex items-center justify-between px-5 py-3.5 border-b border-neutral-100">
+                <div className="flex items-center justify-between px-5 py-3.5 border-b border-neutral-100 dark:border-neutral-800">
                   <div className="flex items-center gap-2">
-                    {mobileSheet === "elevation" && <Mountain size={18} className="text-emerald-600" />}
+                    {mobileSheet === "elevation" && <Mountain size={18} className="text-emerald-600 dark:text-emerald-400" />}
                     {mobileSheet === "cheers" && <Sparkles size={18} className="text-emerald-600" />}
                     {mobileSheet === "stats" && <Gauge size={18} className="text-emerald-600" />}
                     <h3 className="text-sm font-bold text-neutral-900">
@@ -576,17 +644,17 @@ export function LiveTrackerView({ token, initialSession }: LiveTrackerViewProps)
 
         {/* Desktop Collapsible Right Sidebar (w-[380px], Zero page scroll) */}
         {sidebarOpen && (
-          <aside className="w-[380px] xl:w-[420px] shrink-0 h-full bg-white border-l border-neutral-200/90 flex flex-col z-20 shadow-xl overflow-hidden hidden lg:flex">
+          <aside className="w-[380px] xl:w-[420px] shrink-0 h-full bg-white dark:bg-neutral-900 border-l border-neutral-200/90 dark:border-neutral-800 flex flex-col z-20 shadow-xl overflow-hidden hidden lg:flex transition-colors">
             {/* Sidebar Tab Header */}
-            <div className="h-12 shrink-0 border-b border-neutral-200 px-4 flex items-center justify-between bg-neutral-50/50">
+            <div className="h-12 shrink-0 border-b border-neutral-200 dark:border-neutral-800 px-4 flex items-center justify-between bg-neutral-50/50 dark:bg-neutral-850">
               <div className="flex items-center gap-1">
                 <button
                   type="button"
                   onClick={() => setDesktopTab("cheers")}
                   className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
                     desktopTab === "cheers"
-                      ? "bg-white text-emerald-700 shadow-2xs border border-neutral-200/80"
-                      : "text-neutral-500 hover:text-neutral-900"
+                      ? "bg-white dark:bg-neutral-800 text-emerald-700 dark:text-emerald-400 shadow-2xs border border-neutral-200/80 dark:border-neutral-700"
+                      : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100"
                   }`}
                 >
                   🎉 Sorakan ({session?.cheers?.length ?? 0})
@@ -596,8 +664,8 @@ export function LiveTrackerView({ token, initialSession }: LiveTrackerViewProps)
                   onClick={() => setDesktopTab("stats")}
                   className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
                     desktopTab === "stats"
-                      ? "bg-white text-emerald-700 shadow-2xs border border-neutral-200/80"
-                      : "text-neutral-500 hover:text-neutral-900"
+                      ? "bg-white dark:bg-neutral-800 text-emerald-700 dark:text-emerald-400 shadow-2xs border border-neutral-200/80 dark:border-neutral-700"
+                      : "text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100"
                   }`}
                 >
                   📊 Statistik & Cuaca

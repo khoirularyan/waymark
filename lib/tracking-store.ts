@@ -32,6 +32,8 @@ export type Cheer = {
   message?: string;
   emoji?: string;
   createdAt: string;
+  audioData?: string;
+  durationSeconds?: number;
 };
 
 export type Session = {
@@ -492,7 +494,13 @@ export function getCheers(token: string): Cheer[] {
 
 export async function addCheer(
   token: string,
-  cheerData: { senderName: string; message?: string; emoji?: string }
+  cheerData: {
+    senderName: string;
+    message?: string;
+    emoji?: string;
+    audioData?: string;
+    durationSeconds?: number;
+  }
 ): Promise<Cheer | null> {
   const session = inMemoryStore.get(token);
   if (!session) return null;
@@ -507,8 +515,10 @@ export async function addCheer(
     id: "ch_" + Math.random().toString(36).substring(2, 9),
     senderName: cheerData.senderName.trim() || "Penonton",
     message: cheerData.message?.trim(),
-    emoji: cheerData.emoji || "👏",
+    emoji: cheerData.emoji || (cheerData.audioData ? "🎙️" : "👏"),
     createdAt: new Date().toISOString(),
+    audioData: cheerData.audioData,
+    durationSeconds: cheerData.durationSeconds,
   };
 
   cheerList.unshift(cheer);
@@ -518,6 +528,30 @@ export async function addCheer(
 
   session.cheers = cheerList;
   return cheer;
+}
+
+export async function updateSessionTitle(
+  token: string,
+  newTitle: string
+): Promise<boolean> {
+  const cleanTitle = newTitle.trim();
+  if (!cleanTitle) return false;
+
+  const session = inMemoryStore.get(token);
+  if (session) {
+    session.eventName = cleanTitle;
+  }
+
+  const supabase = getSupabaseAdmin();
+  if (supabase) {
+    try {
+      await supabase
+        .from("tracking_sessions")
+        .update({ event_name: cleanTitle })
+        .eq("share_token", token);
+    } catch (_) {}
+  }
+  return true;
 }
 
 export async function setSos(

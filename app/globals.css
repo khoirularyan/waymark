@@ -7,7 +7,9 @@
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
 body { margin: 0; background: #fff; color: #171717; font-family: Arial, Helvetica, sans-serif; }
+html.dark, .dark body { background-color: #0b0f17; color: #f1f5f9; }
 .map-grid { background-color: #e6ebe7; background-image: linear-gradient(#ffffff75 1px, transparent 1px), linear-gradient(90deg, #ffffff75 1px, transparent 1px); background-size: 48px 48px; }
+.dark .map-grid { background-color: #0b0f17; background-image: linear-gradient(#1e293b75 1px, transparent 1px), linear-gradient(90deg, #1e293b75 1px, transparent 1px); }
 .route-line { fill: none; stroke: #a9b1ac; stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 2 10; }
 .track-line { fill: none; stroke: #e85d3f; stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; }
 

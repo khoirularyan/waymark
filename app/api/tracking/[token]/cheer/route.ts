@@ -10,6 +10,8 @@ const cheerSchema = z.object({
   senderName: z.string().max(80).optional(),
   emoji: z.string().max(16).optional(),
   message: z.string().max(280).optional(),
+  audioData: z.string().max(800000).optional(), // base64 voice note
+  durationSeconds: z.number().nonnegative().max(60).optional(),
 });
 
 export async function OPTIONS() {
@@ -31,8 +33,10 @@ export async function POST(request: Request, { params }: RouteProps) {
 
     const cheer = await addCheer(token, {
       senderName: parsed.data.senderName || "Penonton",
-      emoji: parsed.data.emoji || "👏",
+      emoji: parsed.data.emoji || (parsed.data.audioData ? "🎙️" : "👏"),
       message: parsed.data.message,
+      audioData: parsed.data.audioData,
+      durationSeconds: parsed.data.durationSeconds,
     });
 
     if (!cheer) {
