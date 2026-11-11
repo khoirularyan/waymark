@@ -459,6 +459,7 @@ export function LiveTrackerView({
               routeCoordinates={routeCoords}
               trackCoordinates={trackCoords}
               currentPosition={currentPos}
+              isStopped={!isLive}
             />
 
             {/* Interactive Mountain Elevation Profile */}

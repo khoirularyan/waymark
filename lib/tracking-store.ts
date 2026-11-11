@@ -291,6 +291,59 @@ export async function addLocation(
   return activeSession;
 }
 
+export async function addLocations(
+  token: string,
+  newLocations: Location[]
+): Promise<Session | null> {
+  if (newLocations.length === 0) return getSession(token);
+
+  const session = inMemoryStore.get(token);
+  if (!session || session.status !== "live") {
+    const dbSession = await getSession(token);
+    if (!dbSession || dbSession.status !== "live") return null;
+  }
+
+  const activeSession = inMemoryStore.get(token)!;
+  const existingTimestamps = new Set(
+    activeSession.locations.map((l) => l.recordedAt)
+  );
+
+  const toAdd: Location[] = [];
+  for (const loc of newLocations) {
+    if (!existingTimestamps.has(loc.recordedAt)) {
+      existingTimestamps.add(loc.recordedAt);
+      toAdd.push(loc);
+      if (loc.isSos !== undefined) {
+        activeSession.isSos = loc.isSos;
+      }
+    }
+  }
+
+  if (toAdd.length > 0) {
+    activeSession.locations.push(...toAdd);
+
+    const supabase = getSupabaseAdmin();
+    if (supabase && activeSession.id) {
+      try {
+        await supabase.from("tracking_locations").insert(
+          toAdd.map((loc) => ({
+            session_id: activeSession.id,
+            latitude: loc.latitude,
+            longitude: loc.longitude,
+            accuracy: loc.accuracy,
+            battery: loc.battery,
+            recorded_at: loc.recordedAt,
+          }))
+        );
+      } catch (err) {
+        console.warn("Supabase addLocations batch write failed:", err);
+      }
+    }
+  }
+
+  return activeSession;
+}
+
 export async function saveRoute(
   token: string,
   route: RouteData

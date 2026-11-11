@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { addLocation } from "../../../../lib/tracking-store";
+import { addLocation, addLocations } from "../../../../lib/tracking-store";
 
-const schema = z.object({
-  token: z.string().uuid(),
+const locationItemSchema = z.object({
   latitude: z.number().gte(-90).lte(90),
   longitude: z.number().gte(-180).lte(180),
   accuracy: z.number().nonnegative(),
@@ -15,6 +14,15 @@ const schema = z.object({
   recordedAt: z.string().datetime(),
 });
 
+const singleSchema = locationItemSchema.extend({
+  token: z.string().uuid(),
+});
+
+const batchSchema = z.object({
+  token: z.string().uuid(),
+  locations: z.array(locationItemSchema).min(1).max(500),
+});
+
 export async function OPTIONS() {
   return new Response(null, { status: 204 });
 }
@@ -22,8 +30,32 @@ export async function OPTIONS() {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const parsed = schema.safeParse(body);
 
+    if (Array.isArray(body.locations)) {
+      const parsedBatch = batchSchema.safeParse(body);
+      if (!parsedBatch.success) {
+        return NextResponse.json(
+          { error: "Invalid batch location data", details: parsedBatch.error.format() },
+          { status: 400 }
+        );
+      }
+
+      const session = await addLocations(
+        parsedBatch.data.token,
+        parsedBatch.data.locations
+      );
+
+      if (!session) {
+        return NextResponse.json(
+          { error: "Session unavailable or already stopped" },
+          { status: 404 }
+        );
+      }
+
+      return NextResponse.json({ ok: true, syncedCount: parsedBatch.data.locations.length });
+    }
+
+    const parsed = singleSchema.safeParse(body);
     if (!parsed.success) {
       return NextResponse.json(
         { error: "Invalid location data", details: parsed.error.format() },
