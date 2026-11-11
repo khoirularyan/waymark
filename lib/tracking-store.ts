@@ -14,6 +14,14 @@ export type RouteData = {
   elevationGain?: number;
 };
 
+export type Viewer = {
+  visitorId: string;
+  displayName: string;
+  joinedAt: string;
+  lastSeenAt: string;
+  isOnline: boolean;
+};
+
 export type Session = {
   id?: string;
   shareToken: string;
@@ -24,11 +32,16 @@ export type Session = {
   finishedAt?: string | null;
   locations: Location[];
   route?: RouteData | null;
+  viewers?: Viewer[];
+  activeViewerCount?: number;
 };
 
 // Global singleton memory store for Next.js across route module boundaries
 const inMemoryStore: Map<string, Session> =
   (globalThis as any).__waymarkStore ??= new Map<string, Session>();
+
+const inMemoryViewers: Map<string, Map<string, Viewer>> =
+  (globalThis as any).__waymarkViewers ??= new Map<string, Map<string, Viewer>>();
 
 export async function startSession(
   runnerName: string,
@@ -93,6 +106,11 @@ export async function getSession(token: string): Promise<Session | null> {
   const supabase = getSupabaseAdmin();
 
   if (!supabase) {
+    if (memorySession) {
+      const viewers = getActiveViewers(token);
+      memorySession.viewers = viewers;
+      memorySession.activeViewerCount = viewers.filter((v) => v.isOnline).length;
+    }
     return memorySession ?? null;
   }
 
@@ -104,6 +122,11 @@ export async function getSession(token: string): Promise<Session | null> {
       .maybeSingle();
 
     if (sessionErr || !sessionRow) {
+      if (memorySession) {
+        const viewers = getActiveViewers(token);
+        memorySession.viewers = viewers;
+        memorySession.activeViewerCount = viewers.filter((v) => v.isOnline).length;
+      }
       return memorySession ?? null;
     }
 
@@ -130,6 +153,36 @@ export async function getSession(token: string): Promise<Session | null> {
       recordedAt: row.recorded_at,
     }));
 
+    // Fetch viewers from Supabase if any
+    try {
+      const { data: viewerRows } = await supabase
+        .from("tracking_viewers")
+        .select("visitor_id, display_name, joined_at, last_seen_at")
+        .eq("session_id", sessionRow.id)
+        .order("last_seen_at", { ascending: false });
+
+      if (viewerRows && viewerRows.length > 0) {
+        let memViewers = inMemoryViewers.get(token);
+        if (!memViewers) {
+          memViewers = new Map<string, Viewer>();
+          inMemoryViewers.set(token, memViewers);
+        }
+        for (const row of viewerRows) {
+          if (!memViewers.has(row.visitor_id)) {
+            memViewers.set(row.visitor_id, {
+              visitorId: row.visitor_id,
+              displayName: row.display_name,
+              joinedAt: row.joined_at,
+              lastSeenAt: row.last_seen_at,
+              isOnline: Date.now() - new Date(row.last_seen_at).getTime() <= 45000,
+            });
+          }
+        }
+      }
+    } catch (_) {}
+
+    const viewers = getActiveViewers(token);
+
     const session: Session = {
       id: sessionRow.id,
       shareToken: sessionRow.share_token,
@@ -146,12 +199,19 @@ export async function getSession(token: string): Promise<Session | null> {
             elevationGain: routeRow.elevation_gain,
           }
         : memorySession?.route ?? null,
+      viewers,
+      activeViewerCount: viewers.filter((v) => v.isOnline).length,
     };
 
     inMemoryStore.set(token, session);
     return session;
   } catch (err) {
     console.warn("Supabase getSession fallback to in-memory:", err);
+    if (memorySession) {
+      const viewers = getActiveViewers(token);
+      memorySession.viewers = viewers;
+      memorySession.activeViewerCount = viewers.filter((v) => v.isOnline).length;
+    }
     return memorySession ?? null;
   }
 }
@@ -246,4 +306,85 @@ export async function stopSession(token: string): Promise<Session | null> {
   }
 
   return session ?? null;
+}
+
+export function getActiveViewers(token: string): Viewer[] {
+  const sessionViewers = inMemoryViewers.get(token);
+  if (!sessionViewers) return [];
+
+  const now = Date.now();
+  const activeThresholdMs = 45 * 1000; // 45 seconds
+
+  const list: Viewer[] = [];
+  for (const v of sessionViewers.values()) {
+    const lastSeenMs = new Date(v.lastSeenAt).getTime();
+    const isOnline = now - lastSeenMs <= activeThresholdMs;
+    list.push({
+      ...v,
+      isOnline,
+    });
+  }
+
+  // Sort: online first, then latest lastSeenAt
+  list.sort((a, b) => {
+    if (a.isOnline === b.isOnline) {
+      return new Date(b.lastSeenAt).getTime() - new Date(a.lastSeenAt).getTime();
+    }
+    return a.isOnline ? -1 : 1;
+  });
+
+  return list;
+}
+
+export async function registerViewer(
+  token: string,
+  visitorId: string,
+  displayName?: string
+): Promise<{ ok: boolean; activeCount: number; viewers: Viewer[] }> {
+  const session = await getSession(token);
+  if (!session) return { ok: false, activeCount: 0, viewers: [] };
+
+  const now = new Date().toISOString();
+  let sessionViewers = inMemoryViewers.get(token);
+  if (!sessionViewers) {
+    sessionViewers = new Map<string, Viewer>();
+    inMemoryViewers.set(token, sessionViewers);
+  }
+
+  const existing = sessionViewers.get(visitorId);
+  const cleanName =
+    displayName?.trim() ||
+    existing?.displayName ||
+    `Penonton #${visitorId.slice(-4)}`;
+
+  const viewer: Viewer = {
+    visitorId,
+    displayName: cleanName,
+    joinedAt: existing?.joinedAt ?? now,
+    lastSeenAt: now,
+    isOnline: true,
+  };
+  sessionViewers.set(visitorId, viewer);
+
+  // Sync with Supabase if available
+  const supabase = getSupabaseAdmin();
+  if (supabase && session.id) {
+    try {
+      await supabase.from("tracking_viewers").upsert(
+        {
+          session_id: session.id,
+          visitor_id: visitorId,
+          display_name: cleanName,
+          last_seen_at: now,
+        },
+        { onConflict: "session_id, visitor_id" }
+      );
+    } catch (err) {
+      // In-memory fallback
+    }
+  }
+
+  const viewers = getActiveViewers(token);
+  const activeCount = viewers.filter((v) => v.isOnline).length;
+  return { ok: true, activeCount, viewers };
 }

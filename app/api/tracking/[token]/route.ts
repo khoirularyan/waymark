@@ -29,5 +29,7 @@ export async function GET(_: Request, { params }: RouteProps) {
     latestLocation: session.locations.at(-1) ?? null,
     locations: session.locations,
     route: session.route ?? null,
+    viewers: session.viewers ?? [],
+    activeViewerCount: session.activeViewerCount ?? 0,
   });
 }
