@@ -373,7 +373,7 @@ export async function addLocation(
   token: string,
   location: Location
 ): Promise<Session | null> {
-  let session = inMemoryStore.get(token);
+  let session: Session | null | undefined = inMemoryStore.get(token);
   if (!session || session.status !== "live") {
     session = await getSession(token);
     if (!session || session.status !== "live") return null;
@@ -424,7 +424,7 @@ export async function addLocations(
 ): Promise<Session | null> {
   if (newLocations.length === 0) return getSession(token);
 
-  let session = inMemoryStore.get(token);
+  let session: Session | null | undefined = inMemoryStore.get(token);
   if (!session || session.status !== "live") {
     session = await getSession(token);
     if (!session || session.status !== "live") return null;

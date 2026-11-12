@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { addCheer, getCheers } from "../../../../../lib/tracking-store";
+import { addCheer, fetchCheers, getCheers } from "../../../../../lib/tracking-store";
 
 interface RouteProps {
   params: Promise<{ token: string }>;
@@ -57,6 +57,6 @@ export async function POST(request: Request, { params }: RouteProps) {
 
 export async function GET(_request: Request, { params }: RouteProps) {
   const { token } = await params;
-  const cheers = getCheers(token);
+  const cheers = await fetchCheers(token);
   return NextResponse.json({ cheers });
 }

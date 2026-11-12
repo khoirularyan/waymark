@@ -149,7 +149,7 @@ export function LiveTrackerView({ token, initialSession }: LiveTrackerViewProps)
     }
   };
 
-  // Heartbeat viewer ping (Fast 3-second heartbeat for real-time presence)
+  // Heartbeat viewer ping (15-second heartbeat; keeps viewer online while saving network & serverless quota)
   useEffect(() => {
     if (!visitorId || !displayName) return;
 
@@ -164,7 +164,7 @@ export function LiveTrackerView({ token, initialSession }: LiveTrackerViewProps)
     };
 
     pingViewer();
-    const interval = setInterval(pingViewer, 3000);
+    const interval = setInterval(pingViewer, 15000);
     return () => clearInterval(interval);
   }, [token, visitorId, displayName]);
 

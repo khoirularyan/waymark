@@ -117,6 +117,23 @@ export function CheerSection({
     sendCheer("💬", message.trim());
   };
 
+  // Get browser-supported audio mime type (WebM for Android/Chrome/Desktop, MP4/AAC for iOS Safari)
+  const getSupportedMimeType = () => {
+    const types = [
+      "audio/webm;codecs=opus",
+      "audio/webm",
+      "audio/mp4",
+      "audio/aac",
+      "audio/ogg;codecs=opus",
+    ];
+    for (const t of types) {
+      if (typeof MediaRecorder !== "undefined" && typeof MediaRecorder.isTypeSupported === "function" && MediaRecorder.isTypeSupported(t)) {
+        return t;
+      }
+    }
+    return "";
+  };
+
   // Start voice recording
   const startRecording = async () => {
     try {
@@ -126,7 +143,10 @@ export function CheerSection({
       }
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       audioChunksRef.current = [];
-      const recorder = new MediaRecorder(stream);
+      const supportedMime = getSupportedMimeType();
+      const recorder = supportedMime
+        ? new MediaRecorder(stream, { mimeType: supportedMime })
+        : new MediaRecorder(stream);
       mediaRecorderRef.current = recorder;
 
       recorder.ondataavailable = (e) => {
