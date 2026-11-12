@@ -121,6 +121,7 @@ class _TrackingHomeState extends State<TrackingHome> {
 
   // Audio player for incoming voice note cheers
   final AudioPlayer _audioPlayer = AudioPlayer();
+  StreamSubscription? _audioCompleteSubscription;
   String? _playingCheerId;
 
   // Custom session title (Runner can change to whatever they want)
@@ -173,6 +174,7 @@ class _TrackingHomeState extends State<TrackingHome> {
     _positionSubscription?.cancel();
     _pollingTimer?.cancel();
     _interactionTimer?.cancel();
+    _audioCompleteSubscription?.cancel();
     _audioPlayer.dispose();
     _titleController.dispose();
     super.dispose();
@@ -227,6 +229,18 @@ class _TrackingHomeState extends State<TrackingHome> {
             _seenCheerIds.add(c.id);
           }
         });
+      }
+
+      final savedSessionToken = prefs.getString('session_token');
+      if (savedSessionToken != null && savedSessionToken.isNotEmpty) {
+        _sessionToken = savedSessionToken;
+        if (mounted) {
+          setState(() {
+            _isLive = true;
+          });
+        }
+        _startTimersAndStream();
+        _startInteractionTimer();
       }
     } catch (_) {}
   }
@@ -426,7 +440,9 @@ class _TrackingHomeState extends State<TrackingHome> {
       }
       final bytes = base64Decode(raw);
 
-      _audioPlayer.onPlayerComplete.listen((_) {
+      // Cancel previous listener to prevent listener pile-up (memory leak)
+      await _audioCompleteSubscription?.cancel();
+      _audioCompleteSubscription = _audioPlayer.onPlayerComplete.listen((_) {
         if (mounted) setState(() => _playingCheerId = null);
       });
 
@@ -824,6 +840,37 @@ class _TrackingHomeState extends State<TrackingHome> {
           SnackBar(content: Text('Could not connect to tracking server: $e')),
         );
       }
+    }
+  }
+
+  Future<void> _confirmStopTracking() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('Hentikan Live Tracking?'),
+          content: const Text(
+            'Sesi lari akan dihentikan dan penonton tidak akan menerima pembaruan posisi lagi.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Lanjutkan Lari'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFFDC2626),
+              ),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Ya, Hentikan'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirm == true) {
+      await _stopTracking();
     }
   }
 
@@ -1734,7 +1781,7 @@ class _TrackingHomeState extends State<TrackingHome> {
                             borderRadius: BorderRadius.circular(16),
                           ),
                         ),
-                        onPressed: _stopTracking,
+                        onPressed: _confirmStopTracking,
                         icon: const Icon(Icons.stop_rounded, size: 22),
                         label: const Text(
                           'HENTIKAN',
